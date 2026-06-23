@@ -1,0 +1,76 @@
+# ==========================================
+# 1. Compiled Binaries & Object Files
+# ==========================================
+*.com
+*.class
+*.dll
+*.exe
+*.o
+*.obj
+*.so
+*.pyd
+*.a
+*.lib
+*.out
+*.app
+
+# ==========================================
+# 2. Build Directories & Toolchains
+# ==========================================
+# Ignore standard CMake build outputs
+[Bb]uild/
+CMakeFiles/
+CMakeCache.txt
+CMakePresets.json
+*.cmake
+
+# Ignore Xmake artifacts (if used)
+.xmake/
+xmake.conf
+
+# Ignore vcpkg package manager downloads
+vcpkg_installed/
+
+# ==========================================
+# 3. IDE Clutter & Configurations
+# ==========================================
+# VS Code files (keep extensions/settings if desired, but ignore local caches)
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.history/
+
+# Visual Studio files
+.vs/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# CLion / JetBrains
+.idea/
+cmake-build-*/
+
+# ==========================================
+# 4. Crash Dumps & Log Metrics
+# ==========================================
+*.log
+*.tlog
+*.lastbuildstate
+*.unsuccessfulbuild
+*.dump
+*.stackdump
+
+# ==========================================
+# 5. OS-Specific Overrides
+# ==========================================
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store

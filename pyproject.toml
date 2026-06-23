@@ -1,0 +1,15 @@
+[project]
+name = "kerbalgravityprog"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = ["nanobind", "scikit-build-core"]
+
+[build-system]
+requires = ["scikit-build-core", "nanobind"]
+build-backend = "scikit_build_core.build"
+
+[tool.scikit-build]
+cmake.args = ["-DCMAKE_BUILD_TYPE=Release"]
+
+[project.scripts]
+kgp = "kerbalgravityprog.cli:main"
