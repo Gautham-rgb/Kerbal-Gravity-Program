@@ -1,5 +1,5 @@
 {
-  "real_world": {
+  "real": {
     "Sun": {
       "mu": 1.32712440018e20, "radius": 696340000, "a": 0, "e": 0, "phase": 0,
       "moons": {}
@@ -120,7 +120,7 @@
       "moons": {}
     }
   },
-  "ksp_opm": {
+  "ksp-opm": {
     "Sun": {
       "mu": 1.1723328e18, "radius": 261600000, "a": 0, "e": 0, "phase": 0,
       "moons": {}

@@ -1,0 +1,2 @@
+# plase wait untill next week, as the math has to be sorted out and the task corrected, please wait for the following week
+#luckily, the planets.json file is not touched and shall be used for planetary constants

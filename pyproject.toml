@@ -2,7 +2,7 @@
 name = "kerbalgravityprog"
 version = "0.1.0"
 requires-python = ">=3.10"
-dependencies = ["nanobind", "scikit-build-core"]
+dependencies = ["numba", "numpy"]
 
 [build-system]
 requires = ["scikit-build-core", "nanobind"]

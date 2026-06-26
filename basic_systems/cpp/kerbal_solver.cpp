@@ -1,7 +1,2 @@
-#include <stdio.h>
-#include <eigen3/Eigen/Dense>
-#include <cmath>
-#include <nlohmann/json.hpp>
-#include <optional>
-
-class Body
+/* implementations will be given by this week, please wait until then for more code
+luckily, the planets.json file is not touched and shall be used for planetary constants*/
