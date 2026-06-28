@@ -17,14 +17,16 @@ namespace constants {
     const double ker_day_sec = 21600.0;
 };
 
-double get_ut_secs(int year, int day, int hour, int minutes, int seconds, bool ker_time = false) {
+inline double get_ut_secs(int year, int day, int hour, int minutes, int seconds, bool ker_time = false) {
     if (ker_time) {
         double elapsed_years = year - 1;
-        double elapsed_day = day - 1;
-        double total_secs = (elapsed_years * constants::ker_year_sec) + (elapsed_day * constants::ker_day_sec) + 
-        (hour * constants::ker_hour_min * constants::ker_min_sec) + (minutes * constants::ker_min_sec) + seconds;
-
-        return total_secs;
+        double elapsed_days = day - 1;
+        
+        return (elapsed_years * constants::ker_year_sec) + 
+               (elapsed_days * constants::ker_day_sec) + 
+               (hour * 3600.0) + 
+               (minutes * 60.0) + 
+               seconds;
     } else {
         std::chrono::year_month_day base_ymd{
             std::chrono::year{year},
@@ -38,6 +40,6 @@ double get_ut_secs(int year, int day, int hour, int minutes, int seconds, bool k
                            std::chrono::minutes{minutes} + 
                            std::chrono::seconds{seconds};
                            
-        return static_cast<double>(std::chrono::duration_cast<std::chrono::seconds>(time_period.time_since_epoch()).count());
+        return static_cast<double>(time_period.time_since_epoch().count());
     }
 }
