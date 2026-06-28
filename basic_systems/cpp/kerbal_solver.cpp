@@ -17,6 +17,25 @@ namespace constants {
     const double ker_day_sec = 21600.0;
 };
 
+/**
+ * @brief Calculates the Universal Time (UT) timestamp in seconds.
+ * 
+ * @details Computes total elapsed seconds based on calendar parameters.
+ * Supports both C++20 Earth UTC (Unix Epoch) and custom Kerbal Space 
+ * Program (KSP) planetary time tracking configurations.
+ * 
+ * @param year The target calendar year (1-indexed).
+ * @param day The day of the year (1-indexed, e.g., 1 to 365/426).
+ * @param hour The hour of the day.
+ * @param minutes The minutes past the hour.
+ * @param seconds The seconds past the minute.
+ * @param ker_time True when calculating Kerbal time, False when calculating real time.
+ * 
+ * @return double High-precision floating-point epoch timestamp in seconds.
+ * 
+ * @note This function is declared inline to remove execution overhead in orbital propagation loops.
+ * @see constants
+ */
 inline double get_ut_secs(int year, int day, int hour, int minutes, int seconds, bool ker_time = false) {
     if (ker_time) {
         double elapsed_years = year - 1;
