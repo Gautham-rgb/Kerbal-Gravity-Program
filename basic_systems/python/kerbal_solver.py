@@ -136,3 +136,15 @@ class Body:
             return np.zeros(3)
         
         return self.get_pos_at_ut(ut) + self.orbit.parent.get_absolute_pos_at_ut(ut)
+
+def main():
+    sun = Body("Sun", 1.1723328e18, 261600000)
+    kerbin_orbit = Orbit(
+        13599840256.0, 0.01, 0.0, 0.174533, 0.785398, 0.0, sun
+    )
+    kerbin = Body("Kerbin", 3.5316000e12, 600000, orbit = kerbin_orbit)
+    pos = kerbin.get_pos_at_ut(10000.0)
+    print(f"{pos[0]} {pos[1]} {pos[2]}")
+
+if __name__ == "__main__":
+    main()

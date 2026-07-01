@@ -1,4 +1,4 @@
-#include <stdio.h>
+#include <iostream>
 #include <eigen3/Eigen/Dense>
 #include <cmath>
 #include <algorithm>
@@ -162,3 +162,12 @@ public:
         return this->get_pos_at_ut(ut) + orbit.parent->get_absolute_pos_at_ut(ut);
     }
 };
+
+int main() {
+    Body sun("Sun", 1.1723328e18, 261600000);
+    Orbit kerbin_orbit(13599840256.0, 0.01, 0.0, 0.174533, 0.785398, 0.0, &sun);
+    Body kerbin("Kerbin", 3.5316000e12, 600000, kerbin_orbit);
+    Eigen::Vector3d pos = kerbin.get_pos_at_ut(10000.0);
+    std::cout << pos.x() << " " << pos.y() << " " << pos.z() << std::endl;
+    return 0;
+}
