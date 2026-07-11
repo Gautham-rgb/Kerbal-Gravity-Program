@@ -87,6 +87,11 @@ class Body:
         self.atm_height = atm_height
         self.orbit = orbit if orbit else Orbit()
         self.moons = moons if moons is not None else []
+    
+    def get_root_of_system(self):
+        if self.orbit.parent == None:
+            return self
+        return self.orbit.parent.get_root_of_sysstem()
 
     def get_pos_at_ut(self, ut: float):
         if self.orbit.parent is None:
@@ -248,7 +253,7 @@ class LambertSolver:
         if abs(A) < 1e-12:
             raise ValueError("Lambert solve has degenerate transfer geometry.")
 
-        z = self._solve_universal_z(r1_norm, r2_norm, A, tof)
+        z = self._solve_universal_z(float(r1_norm), float(r2_norm), A, tof)
 
         C, S = self._stumpff(z)
         y = r1_norm + r2_norm + A * (z * S - 1.0) / np.sqrt(C)
@@ -266,26 +271,47 @@ class LambertSolver:
 
 class Spacecraft(Body):
     def __init__(self, name: str, r0: np.ndarray, v0: np.ndarray, t0: float, parent: Body):
-        mu = parent.mu
-        r_mag, v_mag = np.linalg.norm(r0), np.linalg.norm(v0)
-        h_vec = np.cross(r0, v0)
+        self.name = name
+        self.parent = parent
+        self.r0 = r0.copy()
+        self.v0 = v0.copy()
+        self.t0 = t0
+        self._recalculate_orbit(self.r0, self.v0, self.t0)
+
+    def set_absolute_pos_at_ut(self, r: np.ndarray, ut: float) -> None:
+        self.r0 = r.copy()
+        self.t0 = ut
+        self._recalculate_orbit(self.r0, self.v0, self.t0)
+
+    def set_absolute_vel_at_ut(self, v: np.ndarray, ut: float) -> None:
+        self.v0 = v.copy()
+        self.t0 = ut
+        self._recalculate_orbit(self.r0, self.v0, self.t0)
+
+    def _recalculate_orbit(self, r: np.ndarray, v: np.ndarray, ut: float) -> None:
+        mu = self.parent.mu
+        r_mag, v_mag = np.linalg.norm(r), np.linalg.norm(v)
+        h_vec = np.cross(r, v)
         h_mag = np.linalg.norm(h_vec)
         energy = (v_mag**2 / 2.0) - (mu / r_mag)
         a = -mu / (2.0 * energy)
-        e_vec = (np.cross(v0, h_vec) / mu) - (r0 / r_mag)
+        e_vec = (np.cross(v, h_vec) / mu) - (r / r_mag)
         e = np.linalg.norm(e_vec)
         inc = np.arccos(np.clip(h_vec[2] / h_mag, -1.0, 1.0))
         n_vec = np.cross(np.array([0.0, 0.0, 1.0]), h_vec)
         n_mag = np.linalg.norm(n_vec)
 
         lan = np.arccos(np.clip(n_vec[0] / n_mag, -1.0, 1.0)) if n_mag != 0.0 else 0.0
-        if n_mag != 0.0 and n_vec[1] < 0: lan = 2.0 * np.pi - lan
+        if n_mag != 0.0 and n_vec[1] < 0: 
+            lan = 2.0 * np.pi - lan
 
         arg_p = np.arccos(np.clip(np.dot(n_vec, e_vec) / (n_mag * e), -1.0, 1.0)) if e > 1e-11 and n_mag != 0.0 else 0.0
-        if e > 1e-11 and n_mag != 0.0 and e_vec[2] < 0: arg_p = 2.0 * np.pi - arg_p
+        if e > 1e-11 and n_mag != 0.0 and e_vec[2] < 0: 
+            arg_p = 2.0 * np.pi - arg_p
 
-        nu0 = np.arccos(np.clip(np.dot(e_vec, r0) / (e * r_mag), -1.0, 1.0)) if e > 1e-11 else 0.0
-        if e > 1e-11 and np.dot(r0, v0) < 0: nu0 = 2.0 * np.pi - nu0
+        nu0 = np.arccos(np.clip(np.dot(e_vec, r) / (e * r_mag), -1.0, 1.0)) if e > 1e-11 else 0.0
+        if e > 1e-11 and np.dot(r, v) < 0: 
+            nu0 = 2.0 * np.pi - nu0
 
         if e < 1.0:
             cos_nu0, sin_nu0 = np.cos(nu0), np.sin(nu0)
@@ -298,9 +324,17 @@ class Spacecraft(Body):
         else:
             ma0 = 0.0
 
-        n = np.sqrt(np.abs(parent.mu / a**3))
-        self.orbit = Orbit(a=float(a), e=float(e), arg_p=float(arg_p), lon_of_asc=float(lan), 
-                           MA_at_t0=float(ma0 - n * t0), inclination=float(inc), parent=parent)
+        n = np.sqrt(np.abs(mu / a**3))
+        
+        self.orbit = Orbit(
+            a=float(a), 
+            e=float(e), 
+            arg_p=float(arg_p), 
+            lon_of_asc=float(lan), 
+            MA_at_t0=float(ma0 - n * ut), 
+            inclination=float(inc), 
+            parent=self.parent
+        )
 
 @dataclass
 class ManeuverNode:
