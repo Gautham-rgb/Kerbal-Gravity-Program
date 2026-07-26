@@ -2,7 +2,7 @@
 name = "kerbalgravityprog"
 version = "0.1.0"
 requires-python = ">=3.10"
-dependencies = ["numpy", "scipy"]
+dependencies = ["numpy", "scipy", "pyvista", "pyside6", "nicegui"]
 
 [project.scripts]
 kgrp = "kerbalgravityprog.cli:main"

@@ -1,6 +1,8 @@
 import numpy as np
 import datetime as dtime
 from dataclasses import dataclass
+from pyvista import Sphere, Plotter
+from typing import Literal
 
 @dataclass
 class Constants:
@@ -11,7 +13,15 @@ class Constants:
     KER_YEAR_SEC: float = 9201600.0
     KER_DAY_SEC: float = 21600.0
 
-def get_ut_secs(year: int, day: int, hour: int, minute: int, seconds: int, ker_time = False):
+def get_ut_secs(year: int, month: int, day: int, hour: int, minute: int, seconds: int = 0, ker_time = False, am_pm: None | Literal["AM", "PM", "am", "pm"] = None):
+
+    if am_pm is not None:
+        am_pm_upper = am_pm.upper()
+        if am_pm_upper == "PM" and hour < 12:
+            hour += 12
+        elif am_pm_upper == "AM" and hour == 12:
+            hour = 0
+
     if ker_time:
         elapsed_years = year - 1
         elapsed_days = day - 1
@@ -26,9 +36,14 @@ def get_ut_secs(year: int, day: int, hour: int, minute: int, seconds: int, ker_t
 
         return float(sum(val * const for val, const in time_conversions))
     else:
-        j2000_epoch = dtime.datetime(2000, 1, 1, 12, 0, 0, tzinfo = dtime.timezone.utc)
-        base_date = dtime.datetime(year, 1, 1, tzinfo = dtime.timezone.utc)
-        target_date = base_date + dtime.timedelta(day - 1, hours = hour, minutes = minute, seconds = seconds)
+        j2000_epoch = dtime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=dtime.timezone.utc)
+        base_date = dtime.datetime(year, month, 1, tzinfo=dtime.timezone.utc)
+        target_date = base_date + dtime.timedelta(
+            days=day - 1, 
+            hours=hour, 
+            minutes=minute, 
+            seconds=seconds
+        )
         return (target_date - j2000_epoch).total_seconds()
 
 def solve_anomaly(mean_anomaly: float, eccen: float):
@@ -69,7 +84,7 @@ def solve_anomaly(mean_anomaly: float, eccen: float):
         return E
 
 class Orbit:
-    def __init__(self, a = 0.0, e = 0.0, arg_p = 0.0, lon_of_asc = 0.0, MA_at_t0 = 0.0, inclination: float = 0.0, parent = None):
+    def __init__(self, a = 0.0, e = 0.0, arg_p = 0.0, lon_of_asc = 0.0, MA_at_t0 = 0.0, inclination: float = 0.0, parent: Body|None = None):
         self.parent = parent
         self.semi_major_axis = a
         self.eccen = e
@@ -77,21 +92,59 @@ class Orbit:
         self.lon_of_asc = lon_of_asc
         self.mean_anomaly_at_t0 = MA_at_t0
         self.inclination = inclination
+        if isinstance(parent, (Body, Spacecraft)):
+            self.period = 2 * np.pi * np.sqrt((self.semi_major_axis ** 3 / self.parent.mu))
 
 class Body:
     def __init__(self, name: str, mu: float, radius: float, atm_height: float = 0.0, 
-                 orbit = None, moons = None) -> None:
+                 orbit = None, moons = None, render_color: str | None = None) -> None:
         self.name = name
         self.mu = mu
         self.radius = radius
         self.atm_height = atm_height
         self.orbit = orbit if orbit else Orbit()
         self.moons = moons if moons is not None else []
+        self.render_color = render_color
+        self.period = 0.0
+        
+
+    def to_mesh(self, plotter, scaled_radius):
+        color = getattr(self, "render_color", "#687c98")
+        if not isinstance(color, str):
+            color = "#687c98"
+            
+        mesh = Sphere(
+            radius=scaled_radius, 
+            theta_resolution=32, 
+            phi_resolution=32
+        )
+        return plotter.add_mesh(mesh, color=color, smooth_shading=True)
+
+
+    def __eq__(self, value: object) -> bool:
+        if not isinstance(value, Body):
+            return False
+        return self.__dict__ == value.__dict__
+
+    def __hash__(self) -> int:
+        return hash(frozenset((k, v) for k, v in self.__dict__.items() if k != "parent" and not isinstance(v, (list, set, dict))))
     
     def get_root_of_system(self):
         if self.orbit.parent == None:
             return self
-        return self.orbit.parent.get_root_of_sysstem()
+        return self.orbit.parent.get_root_of_system()
+    
+    def get_all_obj_in_system(self) -> dict[Body, list[Body | Spacecraft]]:
+        root = self.get_root_of_system()
+        system_dict = {}
+        def traverse(root: Body):
+            if not root: 
+                return
+            system_dict[root] = [] 
+            for moon in root.moons:
+                traverse(moon)
+        traverse(root)
+        return system_dict 
 
     def get_pos_at_ut(self, ut: float):
         if self.orbit.parent is None:
@@ -276,6 +329,7 @@ class Spacecraft(Body):
         self.r0 = r0.copy()
         self.v0 = v0.copy()
         self.t0 = t0
+        self.moons = []
         self._recalculate_orbit(self.r0, self.v0, self.t0)
 
     def set_absolute_pos_at_ut(self, r: np.ndarray, ut: float) -> None:
@@ -338,66 +392,37 @@ class Spacecraft(Body):
 
 @dataclass
 class ManeuverNode:
-    delta_v_vector: np.ndarray
-    prograde: np.ndarray
-    normal: np.ndarray
-    radial: np.ndarray
-    total_mag: float
+    ut: float                  
+    delta_v_vector: np.ndarray 
+    prograde: np.ndarray       
+    normal: np.ndarray         
+    radial: np.ndarray         
+    total_mag: float           
 
 class ManeuverPlanner:
-    def calculate_maneuver(self, v_curr: np.ndarray, v_req: np.ndarray, r_curr: np.ndarray) -> ManeuverNode:
+    def calculate_maneuver(self, ut: float, v_curr: np.ndarray, v_req: np.ndarray, r_curr: np.ndarray) -> ManeuverNode:
         dv_vect = v_req - v_curr
         total_mag = float(np.linalg.norm(dv_vect))
         speed = np.linalg.norm(v_curr)
+        
         if speed == 0.0:
             raise ValueError("Cannot calculate maneuver components for a zero velocity vector.")
 
         prograde_unit = v_curr / speed
         angular_momentum = np.cross(r_curr, v_curr)
         h_mag = np.linalg.norm(angular_momentum)
+        
         if h_mag == 0.0:
             raise ValueError("Cannot calculate maneuver components for collinear position and velocity.")
 
         normal_unit = angular_momentum / h_mag
         radial_unit = np.cross(prograde_unit, normal_unit)
+        
         return ManeuverNode(
+            ut,
             dv_vect,
             (dv_vect @ prograde_unit) * prograde_unit,
             (dv_vect @ normal_unit) * normal_unit,
             (dv_vect @ radial_unit) * radial_unit,
             total_mag
         )
-
-if __name__ == "__main__":
-    sun = Body("Sun", mu=1.1723328e18, radius=261600000)
-    kerbin = Body("Kerbin", mu=3.5316000e12, radius=600000, orbit=Orbit(13599840256.0, 0.01, 0.0, 0.785398, 0.0, 0.174533, sun))
-    duna = Body("Duna", mu=3.0136321e11, radius=320000, orbit=Orbit(20726155264.0, 0.051, 0.0, 2.364921, 3.1415926535, 0.010472, sun))
-
-    start_ut, tof = 14148000.0, 200.0 * 21600.0
-    r_start, v_start_actual = kerbin.get_pos_at_ut(start_ut), kerbin.get_vel_at_ut(start_ut)
-    r_target = duna.get_pos_at_ut(start_ut + tof)
-
-    solver = LambertSolver(root_mu=sun.mu)
-    v_departure_req, _ = solver.solve(r_start, r_target, tof, long_way=False)
-
-    ship = Spacecraft("Ship_Route", r_start, v_departure_req, start_ut, sun)
-    halfway_ut = start_ut + (tof / 2.0)
-    r_halfway = ship.get_pos_at_ut(halfway_ut)
-    v_actual_halfway = ship.get_vel_at_ut(halfway_ut) + np.array([2.0, -1.0, 0.5])
-
-    v_required_halfway, _ = solver.solve(r_halfway, r_target, tof / 2.0, long_way=False)
-    delta_v = v_required_halfway - v_actual_halfway
-
-    u_pro = v_actual_halfway / np.linalg.norm(v_actual_halfway)
-    u_norm = np.cross(r_halfway, v_actual_halfway)
-    u_norm /= np.linalg.norm(u_norm)
-    u_rad = np.cross(u_pro, u_norm)
-
-    print(f"Actual Ship Speed at Halfway:   {np.linalg.norm(v_actual_halfway):.2f} m/s")
-    print(f"Required Target Speed at Halfway: {np.linalg.norm(v_required_halfway):.2f} m/s")
-    print("--- REALISTIC DUNA MID-COURSE CORRECTION ---")
-    print(f"Net 3D Delta-V Vector: {np.round(delta_v, 2)} m/s")
-    print(f"Prograde Burn:         {np.dot(delta_v, u_pro):.4f} m/s")
-    print(f"Normal Burn:           {np.dot(delta_v, u_norm):.4f} m/s")
-    print(f"Radial Burn:           {np.dot(delta_v, u_rad):.4f} m/s")
-    print(f"Total Required Burn:   {np.linalg.norm(delta_v):.4f} m/s")
