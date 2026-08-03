@@ -1,7 +1,10 @@
 import sys, pathlib
-sys.path.extend([str(pathlib.Path(__file__).resolve().parents[1]), str(pathlib.Path(__file__).resolve().parents[1] / "basic_systems")])
+# Add the project root to sys.path
+project_root = pathlib.Path(__file__).resolve().parents[1]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
-from orbit_pred import Body
+from basic_systems.orbit_pred import Body
 from typing import Any
 
 class System:

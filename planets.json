@@ -12,7 +12,8 @@
       "MA_at_t0": 0.0,
       "color": "#FFFF00",
       "atm_height": 0,
-      "moons": {}
+      "moons": {},
+      "identifier": "C"
     },
     "Mercury": {
       "mu": 22032000000000.0,
@@ -25,7 +26,8 @@
       "MA_at_t0": 3.050766,
       "color": "#A5A5A5",
       "atm_height": 0,
-      "moons": {}
+      "moons": {},
+      "identifier": "1"
     },
     "Venus": {
       "mu": 324859000000000.0,
@@ -38,7 +40,8 @@
       "MA_at_t0": 0.874672,
       "color": "#E3BB76",
       "atm_height": 250000,
-      "moons": {}
+      "moons": {},
+      "identifier": "2"
     },
     "Earth": {
       "mu": 398600441800000.0,
@@ -51,6 +54,7 @@
       "MA_at_t0": 6.239849,
       "color": "#2271B3",
       "atm_height": 100000,
+      "identifier": "3",
       "moons": {
         "Moon": {
           "mu": 4904869500000.0,
@@ -62,7 +66,8 @@
           "arg_p": 5.552765,
           "MA_at_t0": 2.360558,
           "color": "#BDBDBD",
-          "atm_height": 0
+          "atm_height": 0,
+          "identifier": "3a"
         }
       }
     },
@@ -77,6 +82,7 @@
       "MA_at_t0": 0.338803,
       "color": "#E27B58",
       "atm_height": 80000,
+      "identifier": "4",
       "moons": {
         "Phobos": {
           "mu": 708700.0,
@@ -88,7 +94,8 @@
           "arg_p": 0.0,
           "MA_at_t0": 0.0,
           "color": "#A5A5A5",
-          "atm_height": 0
+          "atm_height": 0,
+          "identifier": "4a"
         },
         "Deimos": {
           "mu": 96200.0,
@@ -100,7 +107,8 @@
           "arg_p": 0.0,
           "MA_at_t0": 0.0,
           "color": "#A5A5A5",
-          "atm_height": 0
+          "atm_height": 0,
+          "identifier": "4b"
         }
       }
     },
@@ -115,6 +123,7 @@
       "MA_at_t0": 0.349415,
       "color": "#D39C7E",
       "atm_height": 500000,
+      "identifier": "5",
       "moons": {
         "Io": {
           "mu": 5959916000000000.0,
@@ -126,7 +135,8 @@
           "arg_p": 0.0,
           "MA_at_t0": 0.0,
           "color": "#FDFD96",
-          "atm_height": 0
+          "atm_height": 0,
+          "identifier": "5a"
         },
         "Europa": {
           "mu": 3202739000000000.0,
@@ -138,7 +148,8 @@
           "arg_p": 0.0,
           "MA_at_t0": 0.0,
           "color": "#FFFFFF",
-          "atm_height": 0
+          "atm_height": 0,
+          "identifier": "5b"
         },
         "Ganymede": {
           "mu": 9887834000000000.0,
@@ -150,7 +161,8 @@
           "arg_p": 0.0,
           "MA_at_t0": 0.0,
           "color": "#BDBDBD",
-          "atm_height": 0
+          "atm_height": 0,
+          "identifier": "5c"
         },
         "Callisto": {
           "mu": 7179289000000000.0,
@@ -162,7 +174,8 @@
           "arg_p": 0.0,
           "MA_at_t0": 0.0,
           "color": "#7E7E7E",
-          "atm_height": 0
+          "atm_height": 0,
+          "identifier": "5d"
         }
       }
     },
@@ -177,6 +190,7 @@
       "MA_at_t0": 5.533043,
       "color": "#C5AB6E",
       "atm_height": 450000,
+      "identifier": "6",
       "moons": {
         "Titan": {
           "mu": 8931900000000000.0,
@@ -188,7 +202,8 @@
           "arg_p": 3.048218,
           "MA_at_t0": 0.0,
           "color": "#E3BB76",
-          "atm_height": 600000
+          "atm_height": 600000,
+          "identifier": "6a"
         }
       }
     },
@@ -203,6 +218,7 @@
       "MA_at_t0": 2.482382,
       "color": "#BBE1E4",
       "atm_height": 400000,
+      "identifier": "7",
       "moons": {
         "Titania": {
           "mu": 234300000000000.0,
@@ -214,7 +230,8 @@
           "arg_p": 0.0,
           "MA_at_t0": 0.0,
           "color": "#BDBDBD",
-          "atm_height": 0
+          "atm_height": 0,
+          "identifier": "7a"
         }
       }
     },
@@ -229,6 +246,7 @@
       "MA_at_t0": 4.471883,
       "color": "#4169E1",
       "atm_height": 400000,
+      "identifier": "8",
       "moons": {
         "Triton": {
           "mu": 1428000000000000.0,
@@ -240,7 +258,8 @@
           "arg_p": 0.0,
           "MA_at_t0": 0.0,
           "color": "#FDFD96",
-          "atm_height": 800000
+          "atm_height": 800000,
+          "identifier": "8a"
         }
       }
     },
@@ -255,6 +274,7 @@
       "MA_at_t0": 0.253596,
       "color": "#D3B6A1",
       "atm_height": 1600000,
+      "identifier": "9",
       "moons": {
         "Charon": {
           "mu": 105800000000.0,
@@ -266,7 +286,8 @@
           "arg_p": 0.0,
           "MA_at_t0": 0.0,
           "color": "#BDBDBD",
-          "atm_height": 0
+          "atm_height": 0,
+          "identifier": "9a"
         }
       }
     }

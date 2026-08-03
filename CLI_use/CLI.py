@@ -10,10 +10,7 @@ from basic_systems.RKF45 import RKF45
 from basic_systems.renderer import SystemRenderer, make_config_system
 import numpy as np
 
-def j2_grav_system(pos_and_vel_vector: np.ndarray, root_mu: float, ut: float, system: System):
-    root_mu = system.root.mu
-    pos_sc = pos_and_vel_vector[0:3]
-    vel = pos_and_vel_vector[0:6]
+def j2_grav_system(pos_sc: np.ndarray, root_mu: float, ut: float, system: System):
     accel_vec = np.zeros(3)
     nodes_to_check = [system.root]
 
@@ -23,10 +20,8 @@ def j2_grav_system(pos_and_vel_vector: np.ndarray, root_mu: float, ut: float, sy
         if hasattr(curr_body, "mu"):
             if curr_body == system.root:
                 pos = np.zeros(3)
-
             elif hasattr(curr_body, "get_absolute_pos_at_ut"):
                 pos = curr_body.get_absolute_pos_at_ut(ut)
-
             else:
                 pos = np.zeros(3)
 
@@ -36,10 +31,22 @@ def j2_grav_system(pos_and_vel_vector: np.ndarray, root_mu: float, ut: float, sy
             if dist > 1e-5:
                 accel_vec += (curr_body.mu / dist ** 3) * r_vector
 
-        for moon in getattr(curr_body, "moons"):
+        for moon in getattr(curr_body, "moons", []):
             nodes_to_check.append(moon)
+            
     return accel_vec
 
-#test
-system = make_config_system(r"C:\Users\kaart\KerbalGravityProg\planets.json")
-print(system)
+class Ticket:
+    def __init__(self, spacecraft: Spacecraft, system: System, bodies: list[Body], tof: float, start_ut: float, parking_orbit: Orbit, end_orbit: Orbit) -> None:
+        self.spacecraft = spacecraft
+        self.system = system
+        self.bodies = bodies
+        self.tof = tof
+        self.start_ut = start_ut
+        self.parking_orbit = parking_orbit
+        self.end_orbit = end_orbit
+
+        self.rkf45 = RKF45(spacecraft = self.spacecraft, gravity_equation = lambda pos, root_mu, ut: j2_grav_system(pos, root_mu, ut, self.system),
+                           tolerance = 1e-3)
+
+        self.lambert = LambertSolver(self.system.root.mu)

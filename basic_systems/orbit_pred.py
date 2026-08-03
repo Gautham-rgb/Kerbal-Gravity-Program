@@ -46,6 +46,32 @@ def get_ut_secs(year: int, month: int, day: int, hour: int, minute: int, seconds
         )
         return (target_date - j2000_epoch).total_seconds()
 
+def ut_secs_to_date_components(ut: float, ker_time: bool = False):
+    """Convert UT seconds back to date components (Y, M, D, H, M, S)."""
+    if ker_time:
+        y = int(ut // Constants.KER_YEAR_SEC) + 1
+        rem = ut % Constants.KER_YEAR_SEC
+        d = int(rem // Constants.KER_DAY_SEC) + 1
+        rem %= Constants.KER_DAY_SEC
+        h = int(rem // (Constants.KER_HOUR_MIN * Constants.KER_MIN_SEC))
+        rem %= (Constants.KER_HOUR_MIN * Constants.KER_MIN_SEC)
+        m = int(rem // Constants.KER_MIN_SEC)
+        s = int(rem % Constants.KER_MIN_SEC)
+        return y, 0, d, h, m, s # Month is 0 for Kerbal time
+    else:
+        j2000_epoch = dtime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=dtime.timezone.utc)
+        dt = j2000_epoch + dtime.timedelta(seconds=ut)
+        return dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second
+
+def format_ut(ut: float, ker_time: bool = False) -> str:
+    """Format UT seconds as a human-readable string."""
+    y, mon, d, h, m, s = ut_secs_to_date_components(ut, ker_time)
+    if ker_time:
+        return f"Year {y}, Day {d}, {h:02d}:{m:02d}:{s:02d}"
+    else:
+        months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        return f"{y}-{months[mon-1]}-{d:02d} {h:02d}:{m:02d}:{s:02d} UTC"
+
 def solve_anomaly(mean_anomaly: float, eccen: float):
     epsilon = 1e-12
     max_iter = 100
@@ -92,13 +118,15 @@ class Orbit:
         self.lon_of_asc = lon_of_asc
         self.mean_anomaly_at_t0 = MA_at_t0
         self.inclination = inclination
-        if isinstance(parent, (Body, Spacecraft)):
-            self.period = 2 * np.pi * np.sqrt((self.semi_major_axis ** 3 / self.parent.mu))
+        self.period = 0.0
+        if isinstance(parent, (Body, Spacecraft)) and self.semi_major_axis > 0 and parent.mu > 0:
+            self.period = 2 * np.pi * np.sqrt((self.semi_major_axis ** 3 / self.parent.mu)) #type: ignore
 
 class Body:
-    def __init__(self, name: str, mu: float, radius: float, atm_height: float = 0.0, 
+    def __init__(self, name: str, mu: float, identifier: str, radius: float, atm_height: float = 0.0, 
                  orbit = None, moons = None, render_color: str | None = None) -> None:
         self.name = name
+        self.identifier = identifier
         self.mu = mu
         self.radius = radius
         self.atm_height = atm_height
@@ -127,7 +155,8 @@ class Body:
         return self.__dict__ == value.__dict__
 
     def __hash__(self) -> int:
-        return hash(frozenset((k, v) for k, v in self.__dict__.items() if k != "parent" and not isinstance(v, (list, set, dict))))
+        # Use name and identity for hashing to be safe and efficient
+        return hash((self.name, id(self)))
     
     def get_root_of_system(self):
         if self.orbit.parent == None:
@@ -231,7 +260,7 @@ class Body:
 
 class Barycenter(Body):
     def __init__(self, sys_name: str, a: Body, b: Body, total_sma: float, ecc: float, inc: float, lan: float, arg_p: float):
-        super().__init__(sys_name, mu=(a.mu + b.mu), radius=0.0)
+        super().__init__(sys_name, mu=(a.mu + b.mu), radius=0.0, identifier = f"{a.identifier}_{b.identifier}_barycenter", orbit=None, moons=[], render_color="#ffffff")
         self.child_A, self.child_B = a, b
         a_sma = total_sma * (self.child_B.mu / self.mu)
         b_sma = total_sma * (self.child_A.mu / self.mu)

@@ -4,11 +4,11 @@ import scipy as sp
 from collections.abc import Callable
 
 class RKF45:
-    def __init__(self, spacecraft: Spacecraft, gravity_equation: Callable[[np.ndarray, float, float], np.ndarray], tolerence: float):
+    def __init__(self, spacecraft: Spacecraft, gravity_equation: Callable[[np.ndarray, float, float], np.ndarray], tolerance: float):
         self.spacecraft = spacecraft
         self.root_mu = self.spacecraft.get_root_of_system().mu
         self.gravity_func = gravity_equation
-        self.tol = tolerence
+        self.tol = tolerance
     
     def _derivatives(self, state: np.ndarray, ut: float):
         pos, vel = state[0:3], state[3:6]
