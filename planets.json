@@ -13,7 +13,8 @@
       "color": "#FFFF00",
       "atm_height": 0,
       "moons": {},
-      "identifier": "C"
+      "identifier": "C",
+      "true_root": true
     },
     "Mercury": {
       "mu": 22032000000000.0,

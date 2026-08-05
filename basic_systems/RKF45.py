@@ -1,14 +1,37 @@
-from basic_systems.orbit_pred import Body, Spacecraft, Orbit, LambertSolver
+from basic_systems.orbit_pred import Spacecraft, ManeuverNode
 import numpy as np
-import scipy as sp
 from collections.abc import Callable
+from basic_systems.builder import System
 
 class RKF45:
-    def __init__(self, spacecraft: Spacecraft, gravity_equation: Callable[[np.ndarray, float, float], np.ndarray], tolerance: float):
+    def __init__(self, spacecraft: Spacecraft, gravity_equation: Callable[[np.ndarray, float, float], np.ndarray], tolerance: float, system: System | None = None):
         self.spacecraft = spacecraft
         self.root_mu = self.spacecraft.get_root_of_system().mu
         self.gravity_func = gravity_equation
         self.tol = tolerance
+        self.system = system
+
+    @classmethod
+    def n_body_grav_system(cls, pos_sc: np.ndarray, root_mu: float, ut: float, system: System | None = None) -> np.ndarray:
+        accel_vec = np.zeros(3)
+        nodes_to_check = [system.root] if system else [] #type: ignore
+
+        while nodes_to_check:
+            curr_body = nodes_to_check.pop(0)
+
+            if hasattr(curr_body, "mu"):
+                pos = curr_body.get_absolute_pos_at_ut(ut)
+
+                r_vector = pos - pos_sc
+                dist = np.linalg.norm(r_vector)
+
+                if dist > 1e-9:
+                    accel_vec += (curr_body.mu / dist ** 3) * r_vector
+
+            for moon in getattr(curr_body, "moons", []):
+                nodes_to_check.append(moon)
+                
+        return accel_vec
     
     def _derivatives(self, state: np.ndarray, ut: float):
         pos, vel = state[0:3], state[3:6]
@@ -32,10 +55,10 @@ class RKF45:
         next_h = h * max(0.1, min(scale, 4.0))
 
         if pos_error <= self.tol:
-            return True, next_h, rk4_res
+            return True, next_h, rk5_res
         return False, next_h, state
     
-    def propagate(self, duration: float, h0: float, start_ut: float, maneuver_nodes: list | None = None):
+    def propagate(self, duration: float, h0: float, start_ut: float, maneuver_nodes: list[ManeuverNode] | None = None):
         curr_ut = start_ut
         end_ut = start_ut + duration
         h = h0

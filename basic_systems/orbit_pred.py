@@ -1,8 +1,9 @@
 import numpy as np
 import datetime as dtime
 from dataclasses import dataclass
-from pyvista import Sphere, Plotter
+from pyvista import Sphere, Cube
 from typing import Literal
+import itertools
 
 @dataclass
 class Constants:
@@ -110,7 +111,8 @@ def solve_anomaly(mean_anomaly: float, eccen: float):
         return E
 
 class Orbit:
-    def __init__(self, a = 0.0, e = 0.0, arg_p = 0.0, lon_of_asc = 0.0, MA_at_t0 = 0.0, inclination: float = 0.0, parent: Body|None = None):
+    def __init__(self, a: float = 0.0, e: float = 0.0, arg_p: float = 0.0, lon_of_asc: float = 0.0, 
+                 MA_at_t0: float = 0.0, inclination: float = 0.0, parent: Body|None = None):
         self.parent = parent
         self.semi_major_axis = a
         self.eccen = e
@@ -118,13 +120,17 @@ class Orbit:
         self.lon_of_asc = lon_of_asc
         self.mean_anomaly_at_t0 = MA_at_t0
         self.inclination = inclination
-        self.period = 0.0
-        if isinstance(parent, (Body, Spacecraft)) and self.semi_major_axis > 0 and parent.mu > 0:
-            self.period = 2 * np.pi * np.sqrt((self.semi_major_axis ** 3 / self.parent.mu)) #type: ignore
+        if parent and parent.mu > 0 and self.semi_major_axis > 0 and self.eccen < 1:
+            self.period = 2*np.pi*np.sqrt(self.semi_major_axis**3/parent.mu)
+        else:
+            self.period = np.inf
 
 class Body:
+
+    _id_counter = itertools.count()
+
     def __init__(self, name: str, mu: float, identifier: str, radius: float, atm_height: float = 0.0, 
-                 orbit = None, moons = None, render_color: str | None = None) -> None:
+                 orbit: Orbit | None = None, moons: list[Body] | None = None, render_color: str | None = None) -> None:
         self.name = name
         self.identifier = identifier
         self.mu = mu
@@ -134,6 +140,7 @@ class Body:
         self.moons = moons if moons is not None else []
         self.render_color = render_color
         self.period = 0.0
+        self._uid = next(Body._id_counter)
         
 
     def to_mesh(self, plotter, scaled_radius):
@@ -149,15 +156,12 @@ class Body:
         return plotter.add_mesh(mesh, color=color, smooth_shading=True)
 
 
-    def __eq__(self, value: object) -> bool:
-        if not isinstance(value, Body):
-            return False
-        return self.__dict__ == value.__dict__
+    def __hash__(self):
+        return hash(self._uid)
 
-    def __hash__(self) -> int:
-        # Use name and identity for hashing to be safe and efficient
-        return hash((self.name, id(self)))
-    
+    def __eq__(self, other):
+        return isinstance(other, Body) and self._uid == other._uid
+        
     def get_root_of_system(self):
         if self.orbit.parent == None:
             return self
@@ -352,71 +356,213 @@ class LambertSolver:
         return ((r2 - f * r1) / g, (gdot * r2 - r1) / g)
 
 class Spacecraft(Body):
-    def __init__(self, name: str, r0: np.ndarray, v0: np.ndarray, t0: float, parent: Body):
+    def __init__(self, name: str, r0: np.ndarray, v0: np.ndarray, t0: float, parent: Body, 
+                 dry_mass: float, wet_mass: float, hull_mesh, identifier: str = ""):
+        self.dry_mass = dry_mass
+        self.fuel_mass = wet_mass - dry_mass
+        self.engines = []
+        self.hull_mesh = hull_mesh
+        self.active_actors = []
+        
+        super().__init__(
+            name=name, 
+            mu=6.6743e-11 * wet_mass, 
+            identifier=identifier or f"SC_{name.replace(' ', '_').upper()}", 
+            radius=0.01, 
+            atm_height=0.0, 
+            render_color="#ffffff"
+        )
+        
         self.name = name
         self.parent = parent
-        self.r0 = r0.copy()
-        self.v0 = v0.copy()
-        self.t0 = t0
+        self.r0, self.v0, self.t0 = r0.copy(), v0.copy(), t0
         self.moons = []
         self._recalculate_orbit(self.r0, self.v0, self.t0)
 
-    def set_absolute_pos_at_ut(self, r: np.ndarray, ut: float) -> None:
-        self.r0 = r.copy()
+    @property
+    def mass(self) -> float:
+        return self.dry_mass + self.fuel_mass
+
+    def add_engine(self, thrust: float, isp: float, offset: np.ndarray, mesh=None) -> None:
+        self.engines.append({"thrust": thrust, "isp": isp, "offset": offset.copy(), "mesh": mesh, "active": True})
+
+    def set_engine_state(self, index: int, active: bool) -> None:
+        if 0 <= index < len(self.engines):
+            self.engines[index]["active"] = active
+
+    def get_combined_engine_specs(self) -> tuple[float, float]:
+        active = [e for e in self.engines if e["active"]]
+        if not active: return 0.0, 0.0
+        total_thrust = sum(e["thrust"] for e in active)
+        total_flow = sum(e["thrust"] / (e["isp"] * 9.80665) for e in active)
+        return total_thrust, total_thrust / (total_flow * 9.80665)
+
+    def burn_fuel(self, amount: float) -> None:
+        self.fuel_mass = max(0.0, self.fuel_mass - amount)
+        self.mu = 6.6743e-11 * self.mass
+
+    def execute_maneuver(self, delta_v_vec: np.ndarray, ut: float) -> bool:
+        delta_v = np.linalg.norm(delta_v_vec)
+        if delta_v == 0.0: return True
+        _, combined_isp = self.get_combined_engine_specs()
+        if combined_isp == 0.0: return False
+        
+        fuel_needed = self.mass * (1.0 - np.exp(-delta_v / (combined_isp * 9.80665)))
+        if fuel_needed > self.fuel_mass: return False
+        
+        self.burn_fuel(fuel_needed)
+        self.r0 = self.get_absolute_pos_at_ut(ut) - self.parent.get_absolute_pos_at_ut(ut)
+        self.v0 = (self.get_absolute_vel_at_ut(ut) + delta_v_vec) - self.parent.get_absolute_vel_at_ut(ut)
         self.t0 = ut
+        self._recalculate_orbit(self.r0, self.v0, self.t0)
+        return True
+
+    def clear_visualization(self, plotter) -> None:
+        for actor in self.active_actors:
+            plotter.remove_actor(actor)
+        self.active_actors.clear()
+
+    def render(self, plotter, ut: float) -> None:
+        self.clear_visualization(plotter)
+        pos = self.get_absolute_pos_at_ut(ut)
+        
+        hull_copy = self.hull_mesh.copy()
+        hull_copy.translate(pos, inplace=True)
+        self.active_actors.append(plotter.add_mesh(hull_copy, color="white"))
+        
+        for e in self.engines:
+            if e["mesh"] is not None:
+                engine_copy = e["mesh"].copy()
+                engine_copy.translate(pos + e["offset"], inplace=True)
+                color = "#ff4500" if e["active"] else "#555555"
+                self.active_actors.append(plotter.add_mesh(engine_copy, color=color))
+                
+        label_actor = plotter.add_point_labels(
+            [pos], 
+            [f"{self.name}"],
+            always_visible=True,
+            point_size=0,
+            font_size=12,
+            text_color="cyan"
+        )
+        self.active_actors.append(label_actor)
+
+    def set_absolute_pos_at_ut(self, r: np.ndarray, ut: float) -> None:
+        self.r0, self.t0 = r.copy(), ut
         self._recalculate_orbit(self.r0, self.v0, self.t0)
 
     def set_absolute_vel_at_ut(self, v: np.ndarray, ut: float) -> None:
-        self.v0 = v.copy()
-        self.t0 = ut
+        self.v0, self.t0 = v.copy(), ut
         self._recalculate_orbit(self.r0, self.v0, self.t0)
 
     def _recalculate_orbit(self, r: np.ndarray, v: np.ndarray, ut: float) -> None:
         mu = self.parent.mu
-        r_mag, v_mag = np.linalg.norm(r), np.linalg.norm(v)
+
+        r_mag = np.linalg.norm(r)
+        v_mag = np.linalg.norm(v)
+
+        if r_mag < 1e-12:
+            raise ValueError("Position vector magnitude is zero.")
+
+        # Specific angular momentum
         h_vec = np.cross(r, v)
         h_mag = np.linalg.norm(h_vec)
-        energy = (v_mag**2 / 2.0) - (mu / r_mag)
-        a = -mu / (2.0 * energy)
+
+        # Specific orbital energy
+        energy = v_mag**2 / 2.0 - mu / r_mag
+
+        # Semi-major axis
+        if abs(energy) < 1e-12:
+            a = np.inf  # Parabolic
+        else:
+            a = -mu / (2.0 * energy)
+
+        # Eccentricity vector
         e_vec = (np.cross(v, h_vec) / mu) - (r / r_mag)
         e = np.linalg.norm(e_vec)
-        inc = np.arccos(np.clip(h_vec[2] / h_mag, -1.0, 1.0))
-        n_vec = np.cross(np.array([0.0, 0.0, 1.0]), h_vec)
+
+        # Inclination
+        if h_mag < 1e-12:
+            inc = 0.0
+        else:
+            inc = np.arccos(np.clip(h_vec[2] / h_mag, -1.0, 1.0))
+
+        # Node vector
+        k = np.array([0.0, 0.0, 1.0])
+        n_vec = np.cross(k, h_vec)
         n_mag = np.linalg.norm(n_vec)
 
-        lan = np.arccos(np.clip(n_vec[0] / n_mag, -1.0, 1.0)) if n_mag != 0.0 else 0.0
-        if n_mag != 0.0 and n_vec[1] < 0: 
-            lan = 2.0 * np.pi - lan
-
-        arg_p = np.arccos(np.clip(np.dot(n_vec, e_vec) / (n_mag * e), -1.0, 1.0)) if e > 1e-11 and n_mag != 0.0 else 0.0
-        if e > 1e-11 and n_mag != 0.0 and e_vec[2] < 0: 
-            arg_p = 2.0 * np.pi - arg_p
-
-        nu0 = np.arccos(np.clip(np.dot(e_vec, r) / (e * r_mag), -1.0, 1.0)) if e > 1e-11 else 0.0
-        if e > 1e-11 and np.dot(r, v) < 0: 
-            nu0 = 2.0 * np.pi - nu0
-
-        if e < 1.0:
-            cos_nu0, sin_nu0 = np.cos(nu0), np.sin(nu0)
-            E0 = np.arctan2(np.sqrt(1.0 - e**2) * sin_nu0, e + cos_nu0)
-            ma0 = E0 - e * np.sin(E0)
-        elif e > 1.0:
-            cos_nu0, sin_nu0 = np.cos(nu0), np.sin(nu0)
-            H0 = np.arctan2(np.sqrt(e**2 - 1.0) * sin_nu0, e + cos_nu0)
-            ma0 = e * np.sinh(H0) - H0
+        # Longitude of ascending node
+        if n_mag > 1e-12:
+            lan = np.arccos(np.clip(n_vec[0] / n_mag, -1.0, 1.0))
+            if n_vec[1] < 0:
+                lan = 2.0 * np.pi - lan
         else:
+            lan = 0.0
+
+        # Argument of periapsis
+        if e > 1e-10 and n_mag > 1e-12:
+            arg_p = np.arccos(
+                np.clip(np.dot(n_vec, e_vec) / (n_mag * e), -1.0, 1.0)
+            )
+            if e_vec[2] < 0:
+                arg_p = 2.0 * np.pi - arg_p
+        else:
+            arg_p = 0.0
+
+        # True anomaly
+        if e > 1e-10:
+            nu = np.arccos(
+                np.clip(np.dot(e_vec, r) / (e * r_mag), -1.0, 1.0)
+            )
+            if np.dot(r, v) < 0:
+                nu = 2.0 * np.pi - nu
+        else:
+            # Circular orbit
+            if n_mag > 1e-12:
+                nu = np.arccos(
+                    np.clip(np.dot(n_vec, r) / (n_mag * r_mag), -1.0, 1.0)
+                )
+                if r[2] < 0:
+                    nu = 2.0 * np.pi - nu
+            else:
+                nu = np.arctan2(r[1], r[0])
+
+        # Mean anomaly at epoch
+        if e < 1.0 - 1e-10:
+            # Elliptic
+            E = 2.0 * np.arctan2(
+                np.sqrt(1.0 - e) * np.sin(nu / 2.0),
+                np.sqrt(1.0 + e) * np.cos(nu / 2.0),
+            )
+            ma0 = E - e * np.sin(E)
+
+        elif e > 1.0 + 1e-10:
+            # Hyperbolic
+            H = 2.0 * np.arctanh(
+                np.sqrt((e - 1.0) / (e + 1.0)) * np.tan(nu / 2.0)
+            )
+            ma0 = e * np.sinh(H) - H
+
+        else:
+            # Near-parabolic
             ma0 = 0.0
 
-        n = np.sqrt(np.abs(mu / a**3))
-        
+        # Store orbit
+        if np.isfinite(a):
+            n = np.sqrt(mu / abs(a) ** 3)
+            ma_at_t0 = ma0 - n * ut
+        else:
+            ma_at_t0 = ma0
+
         self.orbit = Orbit(
-            a=float(a), 
-            e=float(e), 
-            arg_p=float(arg_p), 
-            lon_of_asc=float(lan), 
-            MA_at_t0=float(ma0 - n * ut), 
-            inclination=float(inc), 
-            parent=self.parent
+            a=float(a),
+            e=float(e),
+            arg_p=float(arg_p),
+            lon_of_asc=float(lan),
+            MA_at_t0=float(ma_at_t0),
+            inclination=float(inc),
+            parent=self.parent,
         )
 
 @dataclass
