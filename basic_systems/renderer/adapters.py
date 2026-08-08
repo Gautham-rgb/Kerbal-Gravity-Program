@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pyvistaqt import QtInteractor
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QSlider
 from PySide6.QtCore import Qt, QTimer
@@ -38,8 +40,7 @@ class PySideVTKAdapter(QWidget):
 
     def _on_slider_changed(self, value: int):
         frac = value / self._SLIDER_STEPS
-        self.renderer.curr_ut = frac * self._timeline_max_ut
-        self.renderer.updater.update_all_positions()
+        self.renderer.updater.set_time(frac * self._timeline_max_ut)
         self.renderer.plotter.render()
 
     def _tick(self):
@@ -78,8 +79,9 @@ class TrameWebAdapter:
         while True:
             await asyncio.sleep(0.033)
             # headless renderer doesn't use the recursive root.after loop
-            self.renderer.curr_ut += 0.033 * self.renderer.time_rate_per_s
-            self.renderer.updater.update_all_positions()
+            self.renderer.updater.set_time(
+                self.renderer.curr_ut + 0.033 * self.renderer.time_rate_per_s
+            )
             if self.view is not None:
                 self.view.update()
 

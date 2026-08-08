@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -17,9 +19,11 @@ class ControlManager:
     def setup(self):
         def increase_warp():
             self.r.time_rate_per_s *= 2.0
+            self._refresh_overlay()
 
         def decrease_warp():
-            self.r.time_rate_per_s /= 2.0
+            self.r.time_rate_per_s = max(0.125, self.r.time_rate_per_s / 2.0)
+            self._refresh_overlay()
 
         def toggle_pause():
             if self.r.time_rate_per_s != 0.0:
@@ -27,6 +31,7 @@ class ControlManager:
                 self.r.time_rate_per_s = 0.0
             else:
                 self.r.time_rate_per_s = self.r._old_rate
+            self._refresh_overlay()
 
         self.r.plotter.add_key_event("Up", increase_warp) #type: ignore
         self.r.plotter.add_key_event("Down", decrease_warp) #type: ignore
@@ -53,8 +58,11 @@ class ControlManager:
             )
 
     def _on_timeline_slider(self, value):
-        self.r.curr_ut = float(value)
-        self.r.updater.update_all_positions()
+        self.r.updater.set_time(float(value))
+        self.r.plotter.render()
+
+    def _refresh_overlay(self):
+        self.r._update_hud()
         self.r.plotter.render()
 
     def _on_body_picked(self, actor):
@@ -89,4 +97,5 @@ class ControlManager:
         
         self.r.plotter.camera.focal_point = target_pos.tolist()
         self.r.plotter.camera.position = new_pos.tolist()
+        self.r._update_hud()
         self.r.plotter.render()

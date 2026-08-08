@@ -1,28 +1,31 @@
+import os
 import sys
-from pathlib import Path
+from prompt_toolkit import PromptSession
+from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit.styles import Style
+from prompt_toolkit.formatted_text import HTML
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from basic_systems.renderer.loader import load_system
 
-import click as cl
-from basic_systems.orbit_pred import Body, Orbit, ManeuverNode, ManeuverPlanner, LambertSolver, Spacecraft
-from basic_systems.builder import System
-from basic_systems.RKF45 import RKF45
-from basic_systems.renderer.renderer import SystemRenderer, make_config_system
-import numpy as np
+theme = Style.from_dict({
+    'cli.error':    '#ff005f bold',
+    'cli.success':  '#00ff00 bold',
+    'prompt.arrow': '#00ff87 bold',
+    'file.name':    '#00d7ff italic',
+})
 
+def print_usage():
+    """Prints standard CLI help when they type wrong arguments."""
+    print("Usage:  krgp repl <abs_or_rel_path_to_file>")
+    print("Example: kgrp repl ./config.json\n")
 
-class Ticket:
-    def __init__(self, spacecraft: Spacecraft, system: System, bodies: list[Body], tof: float, start_ut: float, parking_orbit: Orbit, end_orbit: Orbit) -> None:
-        self.spacecraft = spacecraft
-        self.system = system
-        self.bodies = bodies
-        self.tof = tof
-        self.start_ut = start_ut
-        self.parking_orbit = parking_orbit
-        self.end_orbit = end_orbit
+def main():
+    if len(sys.argv) < 3:
+        print("Missing arguments, please check the command")
+        print_usage()
+        sys.exit(1)
 
-        self.rkf45 = RKF45(spacecraft = self.spacecraft, gravity_equation = lambda pos, root_mu, ut: RKF45.n_body_grav_system(pos, root_mu, ut, self.system),
-                           tolerance = 1e-3, system = self.system)
-
-        self.lambert = LambertSolver(self.system.root.mu)
-
+    if sys.argv[1] != "repl":
+        print(f"plase recheck your command ({sys.argv[1]}), did you mean 'repl'??")
+        print_usage()
+        

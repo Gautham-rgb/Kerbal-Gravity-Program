@@ -1,8 +1,14 @@
+from __future__ import annotations
+
 import numpy as np
 import datetime as dtime
-from dataclasses import dataclass
-from pyvista import Sphere, Cube
-from typing import Literal
+import copy
+from dataclasses import dataclass, field
+try:
+    from pyvista import Sphere, Cube
+except ModuleNotFoundError:  # Keep the simulation and CLI usable without GUI extras.
+    Sphere = Cube = None
+from typing import Any, Literal
 import itertools
 
 @dataclass
@@ -116,9 +122,9 @@ class Orbit:
         self.parent = parent
         self.semi_major_axis = a
         self.eccen = e
-        self.arg_periapsis = arg_p
+        self.arg_p = arg_p
         self.lon_of_asc = lon_of_asc
-        self.mean_anomaly_at_t0 = MA_at_t0
+        self.MA_at_t0 = MA_at_t0
         self.inclination = inclination
         if parent and parent.mu > 0 and self.semi_major_axis > 0 and self.eccen < 1:
             self.period = 2*np.pi*np.sqrt(self.semi_major_axis**3/parent.mu)
@@ -144,6 +150,8 @@ class Body:
         
 
     def to_mesh(self, plotter, scaled_radius):
+        if Sphere is None:
+            raise RuntimeError("Rendering requires the optional 'pyvista' dependency.")
         color = getattr(self, "render_color", "#687c98")
         if not isinstance(color, str):
             color = "#687c98"
@@ -185,7 +193,7 @@ class Body:
         
         a, e, mu = self.orbit.semi_major_axis, self.orbit.eccen, self.orbit.parent.mu
         n = np.sqrt(np.abs(mu / a ** 3))
-        mean_anomaly = self.orbit.mean_anomaly_at_t0 + n * ut
+        mean_anomaly = self.orbit.MA_at_t0 + n * ut
         anomaly = solve_anomaly(mean_anomaly, e)
 
         if e < 1.0:
@@ -206,7 +214,7 @@ class Body:
 
         cos_lan, sin_lan = np.cos(self.orbit.lon_of_asc), np.sin(self.orbit.lon_of_asc)
         cos_inc, sin_inc = np.cos(self.orbit.inclination), np.sin(self.orbit.inclination)
-        cos_ap, sin_ap = np.cos(self.orbit.arg_periapsis), np.sin(self.orbit.arg_periapsis)
+        cos_ap, sin_ap = np.cos(self.orbit.arg_p), np.sin(self.orbit.arg_p)
 
         R_lan = np.array([[cos_lan, -sin_lan, 0.], [sin_lan, cos_lan, 0.], [0., 0., 1.]], np.float64)
         R_inc = np.array([[1., 0., 0.], [0., cos_inc, -sin_inc], [0., sin_inc, cos_inc]], np.float64)
@@ -225,7 +233,7 @@ class Body:
         
         a, e, mu = self.orbit.semi_major_axis, self.orbit.eccen, self.orbit.parent.mu
         n = np.sqrt(np.abs(mu / a ** 3))
-        mean_anomaly = self.orbit.mean_anomaly_at_t0 + n * ut
+        mean_anomaly = self.orbit.MA_at_t0 + n * ut
         anomaly = solve_anomaly(mean_anomaly, e)
 
         if e < 1.0:
@@ -249,7 +257,7 @@ class Body:
 
         cos_lan, sin_lan = np.cos(self.orbit.lon_of_asc), np.sin(self.orbit.lon_of_asc)
         cos_inc, sin_inc = np.cos(self.orbit.inclination), np.sin(self.orbit.inclination)
-        cos_ap, sin_ap = np.cos(self.orbit.arg_periapsis), np.sin(self.orbit.arg_periapsis)
+        cos_ap, sin_ap = np.cos(self.orbit.arg_p), np.sin(self.orbit.arg_p)
 
         R_lan = np.array([[cos_lan, -sin_lan, 0.], [sin_lan, cos_lan, 0.], [0., 0., 1.]], np.float64)
         R_inc = np.array([[1., 0., 0.], [0., cos_inc, -sin_inc], [0., sin_inc, cos_inc]], np.float64)
@@ -355,12 +363,112 @@ class LambertSolver:
         self.solved = True
         return ((r2 - f * r1) / g, (gdot * r2 - r1) / g)
 
+@dataclass
+class OperationResult:
+    success: bool
+    reason: str = ""
+    consumed: dict[str, float] = field(default_factory=dict)
+    spawned_vessel: "Spacecraft | None" = None
+    detached_parts: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ResourceTank:
+    resource: str
+    amount: float
+    capacity: float
+    crossfeed: bool = True
+
+    def __post_init__(self) -> None:
+        if self.capacity < 0 or self.amount < 0 or self.amount > self.capacity:
+            raise ValueError("Resource tank amount must be between zero and capacity.")
+
+
+@dataclass
+class Engine:
+    name: str
+    max_thrust: float
+    vacuum_isp: float
+    propellants: dict[str, float] = field(default_factory=lambda: {"LiquidFuel": 1.0})
+    atmospheric_isp: float | None = None
+    active: bool = True
+    throttle: float = 1.0
+    gimbal_limit: float = 0.0
+    offset: np.ndarray = field(default_factory=lambda: np.zeros(3))
+    mesh: Any = None
+
+    def __post_init__(self) -> None:
+        if self.max_thrust < 0 or self.vacuum_isp <= 0:
+            raise ValueError("Engine thrust and specific impulse must be positive.")
+        if not self.propellants or any(amount <= 0 for amount in self.propellants.values()):
+            raise ValueError("An engine needs positive propellant ratios.")
+        self.throttle = float(np.clip(self.throttle, 0.0, 1.0))
+        self.offset = np.asarray(self.offset, dtype=float).copy()
+
+    def isp_at_pressure(self, pressure: float = 0.0) -> float:
+        if self.atmospheric_isp is None:
+            return self.vacuum_isp
+        # One atmosphere is the simple interpolation boundary for now.
+        return self.vacuum_isp + (self.atmospheric_isp - self.vacuum_isp) * np.clip(pressure / 101325.0, 0.0, 1.0)
+
+    def available_thrust(self, pressure: float = 0.0) -> float:
+        del pressure
+        return self.max_thrust * self.throttle if self.active else 0.0
+
+    def mass_flow(self, pressure: float = 0.0) -> float:
+        thrust = self.available_thrust(pressure)
+        return thrust / (self.isp_at_pressure(pressure) * 9.80665) if thrust else 0.0
+
+
+@dataclass
+class Part:
+    identifier: str
+    dry_mass: float
+    tanks: list[ResourceTank] = field(default_factory=list)
+    engines: list[Engine] = field(default_factory=list)
+    attached: bool = True
+
+    @property
+    def mass(self) -> float:
+        return self.dry_mass + sum(tank.amount for tank in self.tanks)
+
+
+@dataclass
+class GuidanceState:
+    mode: str = "inertial"
+    attitude: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0, 0.0, 0.0]))
+    angular_velocity: np.ndarray = field(default_factory=lambda: np.zeros(3))
+    target: str | None = None
+
+
+@dataclass
+class VesselSnapshot:
+    ut: float
+    parent: Body
+    position: np.ndarray
+    velocity: np.ndarray
+    parts: list[Part]
+    guidance: GuidanceState
+    surface_body: Body | None
+    science_data: float
+
+
 class Spacecraft(Body):
     def __init__(self, name: str, r0: np.ndarray, v0: np.ndarray, t0: float, parent: Body, 
-                 dry_mass: float, wet_mass: float, hull_mesh, identifier: str = ""):
-        self.dry_mass = dry_mass
-        self.fuel_mass = wet_mass - dry_mass
-        self.engines = []
+                 dry_mass: float, wet_mass: float, hull_mesh, identifier: str = "", render_color: str = "#ffffff"):
+        if dry_mass < 0 or wet_mass < dry_mass:
+            raise ValueError("Wet mass must be greater than or equal to dry mass.")
+        self.parts = [
+            Part(
+                identifier="core",
+                dry_mass=float(dry_mass),
+                tanks=[ResourceTank("LiquidFuel", float(wet_mass - dry_mass), float(wet_mass - dry_mass))],
+            )
+        ]
+        self.guidance = GuidanceState()
+        self.surface_body: Body | None = None
+        self.science_data = 0.0
+        self.docked_to: set[Spacecraft] = set()
         self.hull_mesh = hull_mesh
         self.active_actors = []
         
@@ -370,7 +478,7 @@ class Spacecraft(Body):
             identifier=identifier or f"SC_{name.replace(' ', '_').upper()}", 
             radius=0.01, 
             atm_height=0.0, 
-            render_color="#ffffff"
+            render_color=render_color
         )
         
         self.name = name
@@ -381,41 +489,305 @@ class Spacecraft(Body):
 
     @property
     def mass(self) -> float:
-        return self.dry_mass + self.fuel_mass
+        return sum(part.mass for part in self.parts if part.attached)
 
-    def add_engine(self, thrust: float, isp: float, offset: np.ndarray, mesh=None) -> None:
-        self.engines.append({"thrust": thrust, "isp": isp, "offset": offset.copy(), "mesh": mesh, "active": True})
+    @property
+    def dry_mass(self) -> float:
+        return sum(part.dry_mass for part in self.parts if part.attached)
+
+    @property
+    def fuel_mass(self) -> float:
+        return self.resource_amount("LiquidFuel")
+
+    @property
+    def engines(self) -> list[Engine]:
+        return [engine for part in self.parts if part.attached for engine in part.engines]
+
+    def _refresh_mass(self) -> None:
+        self.mu = 6.6743e-11 * self.mass
+
+    def add_part(self, part: Part) -> None:
+        if any(existing.identifier == part.identifier for existing in self.parts):
+            raise ValueError(f"Part '{part.identifier}' already exists.")
+        self.parts.append(part)
+        self._refresh_mass()
+
+    def add_resource_tank(
+        self, resource: str, capacity: float, amount: float | None = None, part_id: str = "core"
+    ) -> None:
+        part = self._part(part_id)
+        part.tanks.append(ResourceTank(resource, capacity if amount is None else amount, capacity))
+        self._refresh_mass()
+
+    def resource_amount(self, resource: str) -> float:
+        return sum(tank.amount for part in self.parts if part.attached for tank in part.tanks if tank.resource == resource)
+
+    def resource_capacity(self, resource: str) -> float:
+        return sum(tank.capacity for part in self.parts if part.attached for tank in part.tanks if tank.resource == resource)
+
+    def consume_resource(self, resource: str, amount: float) -> float:
+        if amount < 0:
+            raise ValueError("Resource consumption cannot be negative.")
+        remaining = amount
+        for part in self.parts:
+            for tank in part.tanks:
+                if part.attached and tank.crossfeed and tank.resource == resource:
+                    used = min(tank.amount, remaining)
+                    tank.amount -= used
+                    remaining -= used
+                    if remaining <= 1e-12:
+                        self._refresh_mass()
+                        return amount
+        self._refresh_mass()
+        return amount - remaining
+
+    def add_resource(self, resource: str, amount: float) -> float:
+        if amount < 0:
+            raise ValueError("Resource addition cannot be negative.")
+        remaining = amount
+        for part in self.parts:
+            for tank in part.tanks:
+                if part.attached and tank.resource == resource:
+                    added = min(tank.capacity - tank.amount, remaining)
+                    tank.amount += added
+                    remaining -= added
+                    if remaining <= 1e-12:
+                        self._refresh_mass()
+                        return amount
+        self._refresh_mass()
+        return amount - remaining
+
+    def _part(self, identifier: str) -> Part:
+        for part in self.parts:
+            if part.identifier == identifier and part.attached:
+                return part
+        raise ValueError(f"Attached part '{identifier}' was not found.")
+
+    def add_engine(
+        self, thrust: float, isp: float, offset: np.ndarray, mesh=None, *, name: str | None = None,
+        propellants: dict[str, float] | None = None, part_id: str = "core"
+    ) -> None:
+        part = self._part(part_id)
+        part.engines.append(Engine(name or f"Engine {len(self.engines) + 1}", thrust, isp, propellants or {"LiquidFuel": 1.0}, offset=offset, mesh=mesh))
 
     def set_engine_state(self, index: int, active: bool) -> None:
         if 0 <= index < len(self.engines):
-            self.engines[index]["active"] = active
+            self.engines[index].active = active
+
+    def set_throttle(self, throttle: float, engine_indices: list[int] | None = None) -> None:
+        indices = engine_indices if engine_indices is not None else list(range(len(self.engines)))
+        for index in indices:
+            if not 0 <= index < len(self.engines):
+                raise IndexError(f"Engine index {index} is out of range.")
+            self.engines[index].throttle = float(np.clip(throttle, 0.0, 1.0))
 
     def get_combined_engine_specs(self) -> tuple[float, float]:
-        active = [e for e in self.engines if e["active"]]
+        active = [engine for engine in self.engines if engine.active and engine.throttle > 0]
         if not active: return 0.0, 0.0
-        total_thrust = sum(e["thrust"] for e in active)
-        total_flow = sum(e["thrust"] / (e["isp"] * 9.80665) for e in active)
+        total_thrust = sum(engine.available_thrust() for engine in active)
+        total_flow = sum(engine.mass_flow() for engine in active)
         return total_thrust, total_thrust / (total_flow * 9.80665)
 
     def burn_fuel(self, amount: float) -> None:
-        self.fuel_mass = max(0.0, self.fuel_mass - amount)
-        self.mu = 6.6743e-11 * self.mass
+        if self.consume_resource("LiquidFuel", amount) + 1e-12 < amount:
+            raise ValueError("Insufficient LiquidFuel.")
 
-    def execute_maneuver(self, delta_v_vec: np.ndarray, ut: float) -> bool:
-        delta_v = np.linalg.norm(delta_v_vec)
-        if delta_v == 0.0: return True
-        _, combined_isp = self.get_combined_engine_specs()
-        if combined_isp == 0.0: return False
-        
-        fuel_needed = self.mass * (1.0 - np.exp(-delta_v / (combined_isp * 9.80665)))
-        if fuel_needed > self.fuel_mass: return False
-        
-        self.burn_fuel(fuel_needed)
-        self.r0 = self.get_absolute_pos_at_ut(ut) - self.parent.get_absolute_pos_at_ut(ut)
-        self.v0 = (self.get_absolute_vel_at_ut(ut) + delta_v_vec) - self.parent.get_absolute_vel_at_ut(ut)
-        self.t0 = ut
-        self._recalculate_orbit(self.r0, self.v0, self.t0)
+    def execute_maneuver(self, node: ManeuverNode, ut: float) -> bool:
+        return self.apply_impulse(node.delta_v_vector, ut).success
+
+    def _active_engines(self) -> list[Engine]:
+        return [engine for engine in self.engines if engine.active and engine.throttle > 0]
+
+    def _propellant_requirements(self, duration: float, pressure: float = 0.0) -> dict[str, float]:
+        requirements: dict[str, float] = {}
+        for engine in self._active_engines():
+            flow = engine.mass_flow(pressure) * duration
+            ratio_sum = sum(engine.propellants.values())
+            for resource, ratio in engine.propellants.items():
+                requirements[resource] = requirements.get(resource, 0.0) + flow * ratio / ratio_sum
+        return requirements
+
+    def _consume_requirements(self, requirements: dict[str, float]) -> bool:
+        if any(self.resource_amount(resource) + 1e-9 < amount for resource, amount in requirements.items()):
+            return False
+        for resource, amount in requirements.items():
+            self.consume_resource(resource, amount)
         return True
+
+    def apply_impulse(self, delta_v_vector: np.ndarray, ut: float) -> OperationResult:
+        """Apply an instantaneous manoeuvre using the active engines' propellant mix."""
+        delta_v = float(np.linalg.norm(delta_v_vector))
+        if delta_v == 0.0:
+            return OperationResult(True)
+        _, isp = self.get_combined_engine_specs()
+        if isp == 0.0:
+            return OperationResult(False, "No active engine is available.")
+        propellant_mass = self.mass * (1.0 - np.exp(-delta_v / (isp * 9.80665)))
+        per_second = self._propellant_requirements(1.0)
+        total_flow = sum(per_second.values())
+        requirements = {resource: propellant_mass * amount / total_flow for resource, amount in per_second.items()}
+        if not self._consume_requirements(requirements):
+            return OperationResult(False, "Insufficient propellant for manoeuvre.")
+        position, velocity = self.state_at(ut)
+        self.set_state(position, velocity + np.asarray(delta_v_vector, dtype=float), ut)
+        return OperationResult(True, consumed=requirements)
+
+    def apply_rcs_impulse(self, delta_v_vector: np.ndarray, ut: float, isp: float = 260.0) -> OperationResult:
+        """Apply a small translation impulse using MonoPropellant."""
+        delta_v = float(np.linalg.norm(delta_v_vector))
+        if delta_v == 0.0:
+            return OperationResult(True)
+        if isp <= 0:
+            return OperationResult(False, "RCS specific impulse must be positive.")
+        required = self.mass * (1.0 - np.exp(-delta_v / (isp * 9.80665)))
+        if self.resource_amount("MonoPropellant") + 1e-9 < required:
+            return OperationResult(False, "Insufficient MonoPropellant.")
+        self.consume_resource("MonoPropellant", required)
+        position, velocity = self.state_at(ut)
+        self.set_state(position, velocity + np.asarray(delta_v_vector, dtype=float), ut)
+        return OperationResult(True, consumed={"MonoPropellant": required})
+
+    def advance_burn(
+        self, duration: float, direction: np.ndarray, start_ut: float, pressure: float = 0.0
+    ) -> OperationResult:
+        """Perform a finite burn with constant thrust and direction over ``duration``."""
+        if duration <= 0:
+            return OperationResult(False, "Burn duration must be positive.")
+        unit_direction = np.asarray(direction, dtype=float)
+        magnitude = np.linalg.norm(unit_direction)
+        if magnitude == 0:
+            return OperationResult(False, "Burn direction cannot be zero.")
+        thrust = sum(engine.available_thrust(pressure) for engine in self._active_engines())
+        if thrust == 0:
+            return OperationResult(False, "No active engine is available.")
+        requested = self._propellant_requirements(duration, pressure)
+        possible_duration = duration
+        for resource, amount in requested.items():
+            if amount > 0:
+                possible_duration = min(possible_duration, duration * self.resource_amount(resource) / amount)
+        if possible_duration <= 1e-9:
+            return OperationResult(False, "Insufficient propellant to start burn.")
+        requirements = self._propellant_requirements(possible_duration, pressure)
+        initial_mass = self.mass
+        if not self._consume_requirements(requirements):
+            return OperationResult(False, "Propellant feed failed.")
+        final_mass = self.mass
+        _, isp = self.get_combined_engine_specs()
+        delta_v = isp * 9.80665 * np.log(initial_mass / final_mass)
+        end_ut = start_ut + possible_duration
+        position, velocity = self.state_at(end_ut)
+        self.set_state(position, velocity + unit_direction / magnitude * delta_v, end_ut)
+        reason = "" if possible_duration == duration else "Burn ended early: propellant depleted."
+        return OperationResult(True, reason, requirements)
+
+    def set_guidance(self, mode: str, attitude: np.ndarray | None = None, target: str | None = None) -> None:
+        self.guidance.mode = mode
+        self.guidance.target = target
+        if attitude is not None:
+            attitude = np.asarray(attitude, dtype=float)
+            if attitude.shape != (4,) or np.linalg.norm(attitude) == 0:
+                raise ValueError("Attitude must be a non-zero quaternion.")
+            self.guidance.attitude = attitude / np.linalg.norm(attitude)
+
+    def stage(self, part_ids: list[str]) -> OperationResult:
+        if not part_ids:
+            return OperationResult(False, "Select at least one part to stage.")
+        if "core" in part_ids:
+            return OperationResult(False, "The core part cannot be staged.")
+        detached: list[str] = []
+        for identifier in part_ids:
+            part = self._part(identifier)
+            part.attached = False
+            detached.append(identifier)
+        self._refresh_mass()
+        return OperationResult(True, detached_parts=detached)
+
+    def transfer_resource(self, other: "Spacecraft", resource: str, amount: float) -> OperationResult:
+        if amount <= 0:
+            return OperationResult(False, "Transfer amount must be positive.")
+        moved = min(amount, self.resource_amount(resource), other.resource_capacity(resource) - other.resource_amount(resource))
+        if moved <= 0:
+            return OperationResult(False, "No transferable resource capacity is available.")
+        self.consume_resource(resource, moved)
+        other.add_resource(resource, moved)
+        return OperationResult(True, consumed={resource: moved})
+
+    def change_reference_body(self, new_parent: Body, ut: float) -> OperationResult:
+        if new_parent is self.parent:
+            return OperationResult(True)
+        position, velocity = self.state_at(ut)
+        self.parent = new_parent
+        self.set_state(position, velocity, ut)
+        return OperationResult(True)
+
+    def dock(self, other: Spacecraft, ut: float) -> OperationResult:
+        if other is self:
+            return OperationResult(False, "A vessel cannot dock with itself.")
+        if other.parent is not self.parent:
+            return OperationResult(False, "Vessels must share a reference body before docking.")
+        position_a, velocity_a = self.state_at(ut)
+        position_b, velocity_b = other.state_at(ut)
+        if np.linalg.norm(position_a - position_b) > max(self.radius + other.radius, 1.0):
+            return OperationResult(False, "Vessels are not within docking distance.")
+        mass_a, mass_b = self.mass, other.mass
+        self.parts.extend(copy.deepcopy(other.parts))
+        self._refresh_mass()
+        self.set_state((position_a * mass_a + position_b * mass_b) / (mass_a + mass_b), (velocity_a * mass_a + velocity_b * mass_b) / (mass_a + mass_b), ut)
+        other.docked_to.add(self)
+        self.docked_to.add(other)
+        return OperationResult(True)
+
+    def undock(self, part_ids: list[str], name: str, ut: float) -> OperationResult:
+        if not part_ids or "core" in part_ids:
+            return OperationResult(False, "Undocking requires one or more non-core parts.")
+        detached = [self._part(identifier) for identifier in part_ids]
+        for part in detached:
+            part.attached = False
+        self._refresh_mass()
+        position, velocity = self.state_at(ut)
+        spawned = Spacecraft(name, position - self.parent.get_absolute_pos_at_ut(ut), velocity - self.parent.get_absolute_vel_at_ut(ut), ut, self.parent, 0.0, 0.0, self.hull_mesh)
+        spawned.parts = copy.deepcopy(detached)
+        for part in spawned.parts:
+            part.attached = True
+        spawned._refresh_mass()
+        spawned._recalculate_orbit(spawned.r0, spawned.v0, ut)
+        return OperationResult(True, spawned_vessel=spawned, detached_parts=part_ids)
+
+    def snapshot(self, ut: float) -> VesselSnapshot:
+        position, velocity = self.state_at(ut)
+        return VesselSnapshot(ut, self.parent, position.copy(), velocity.copy(), copy.deepcopy(self.parts), copy.deepcopy(self.guidance), self.surface_body, self.science_data)
+
+    def restore(self, snapshot: VesselSnapshot) -> None:
+        self.parent = snapshot.parent
+        self.parts = copy.deepcopy(snapshot.parts)
+        self.guidance = copy.deepcopy(snapshot.guidance)
+        self.surface_body = snapshot.surface_body
+        self.science_data = snapshot.science_data
+        self._refresh_mass()
+        self.set_state(snapshot.position, snapshot.velocity, snapshot.ut)
+
+    def collect_science(self, amount: float) -> OperationResult:
+        if amount <= 0:
+            return OperationResult(False, "Science amount must be positive.")
+        self.science_data += amount
+        return OperationResult(True)
+
+    def transmit_science(self, amount: float | None = None) -> OperationResult:
+        sent = self.science_data if amount is None else min(amount, self.science_data)
+        if sent <= 0:
+            return OperationResult(False, "No science data is available.")
+        self.science_data -= sent
+        return OperationResult(True, consumed={"Science": sent})
+
+    def land(self, body: Body) -> OperationResult:
+        self.surface_body = body
+        return OperationResult(True)
+
+    def launch(self) -> OperationResult:
+        if self.surface_body is None:
+            return OperationResult(False, "Vessel is not landed.")
+        self.surface_body = None
+        return OperationResult(True)
 
     def clear_visualization(self, plotter) -> None:
         for actor in self.active_actors:
@@ -431,10 +803,10 @@ class Spacecraft(Body):
         self.active_actors.append(plotter.add_mesh(hull_copy, color="white"))
         
         for e in self.engines:
-            if e["mesh"] is not None:
-                engine_copy = e["mesh"].copy()
-                engine_copy.translate(pos + e["offset"], inplace=True)
-                color = "#ff4500" if e["active"] else "#555555"
+            if e.mesh is not None:
+                engine_copy = e.mesh.copy()
+                engine_copy.translate(pos + e.offset, inplace=True)
+                color = "#ff4500" if e.active else "#555555"
                 self.active_actors.append(plotter.add_mesh(engine_copy, color=color))
                 
         label_actor = plotter.add_point_labels(
@@ -446,6 +818,27 @@ class Spacecraft(Body):
             text_color="cyan"
         )
         self.active_actors.append(label_actor)
+
+    def state_at(self, ut: float) -> tuple[np.ndarray, np.ndarray]:
+        return (
+            self.get_absolute_pos_at_ut(ut),
+            self.get_absolute_vel_at_ut(ut),
+        )
+
+    def set_state(
+        self,
+        r_abs: np.ndarray,
+        v_abs: np.ndarray,
+        ut: float,
+    ):
+        parent_r = self.parent.get_absolute_pos_at_ut(ut)
+        parent_v = self.parent.get_absolute_vel_at_ut(ut)
+
+        self.r0 = r_abs - parent_r
+        self.v0 = v_abs - parent_v
+        self.t0 = ut
+
+        self._recalculate_orbit(self.r0, self.v0, self.t0)
 
     def set_absolute_pos_at_ut(self, r: np.ndarray, ut: float) -> None:
         self.r0, self.t0 = r.copy(), ut

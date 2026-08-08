@@ -2,7 +2,18 @@
 name = "kerbalgravityprog"
 version = "0.1.0"
 requires-python = ">=3.10"
-dependencies = ["numpy", "scipy", "pyvista", "pyside6", "nicegui", "opencv-python", "pyvistaqt", "trame-vtk", "trame", "trame-vuetify"]
+dependencies = [
+    "numpy",
+    "scipy",
+    "pyvista",
+    "pyside6",
+    "pyvistaqt",
+    "trame",
+    "trame-vtk",
+    "trame-vuetify",
+    "rich",
+    "prompt-toolkit",
+]
 
 [project.scripts]
 kgrp = "kerbalgravityprog.cli:main"

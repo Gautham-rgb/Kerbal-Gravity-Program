@@ -4,7 +4,7 @@ from collections.abc import Callable
 from basic_systems.builder import System
 
 class RKF45:
-    def __init__(self, spacecraft: Spacecraft, gravity_equation: Callable[[np.ndarray, float, float], np.ndarray], tolerance: float, system: System | None = None):
+    def __init__(self, spacecraft: Spacecraft, gravity_equation: Callable[[np.ndarray, float, float], np.ndarray], tolerance: float = 1e-6, system: System | None = None):
         self.spacecraft = spacecraft
         self.root_mu = self.spacecraft.get_root_of_system().mu
         self.gravity_func = gravity_equation

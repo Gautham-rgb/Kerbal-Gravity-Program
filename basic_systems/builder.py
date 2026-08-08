@@ -41,22 +41,38 @@ class System:
         return system_dict
 
     def __repr__(self) -> str:
-        if not self.root:
-            return "System(Empty)"
-            
-        def build_tree_str(current: Body, level: int = 0) -> str:
-            indent = "  " * level
-            prefix = f"{indent}└── " if level > 0 else ""
-            
-            body_name = getattr(current, 'name', str(current))
-            lines = [f"{prefix}{body_name}"]
-            
-            for moon in current.moons:
-                lines.append(build_tree_str(moon, level + 1))
-                
-            return "\n".join(lines)
-            
-        return f"System Structure:\nName: The {self.name}\n{build_tree_str(self.root)}"
+        if self.root is None:
+            return "System(empty)"
+
+        def build_tree(body: Body, prefix: str = "", is_last: bool = True) -> list[str]:
+            connector = "└── " if is_last else "├── "
+
+            label = body.name
+            if body.identifier is not None:
+                label += f" ({body.identifier})"
+
+            lines = [prefix + connector + label]
+
+            child_prefix = prefix + ("    " if is_last else "│   ")
+
+            for i, moon in enumerate(body.moons):
+                lines.extend(
+                    build_tree(
+                        moon,
+                        child_prefix,
+                        i == len(body.moons) - 1,
+                    )
+                )
+
+            return lines
+
+        tree = build_tree(self.root)
+        tree[0] = tree[0][4:]  # Remove connector from root.
+
+        return (
+            f"System: {self.name}\n"
+            + "\n".join(tree)
+        )
 
     def get(self, name: str, default: None | Any = None) -> Body | Any:
         target_name = name.strip().lower()
