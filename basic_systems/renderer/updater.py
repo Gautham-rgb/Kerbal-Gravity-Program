@@ -16,22 +16,14 @@ class SceneUpdater:
     def r(self):
         return self.renderer
 
-    def set_time(self, ut: float) -> None:
-        """Make ``ut`` the authoritative absolute simulation time.
+    def set_time(self, ut: float):
+        ut = float(ut)
 
-        Ticket state is rebuilt when moving backwards, so timeline scrubbing
-        never leaves a maneuver, stage, or resource transfer applied twice.
-        """
-        target_ut = float(ut)
-        rewinding = target_ut < self.r.curr_ut
+        if not np.isfinite(ut):
+            raise ValueError(f"set_time received invalid UT: {ut}")
 
-        for ticket in self.r.tickets:
-            if rewinding:
-                ticket.reset()
-            if target_ut >= ticket.cursor_ut:
-                ticket.advance_to(target_ut)
+        self.r.curr_ut = ut
 
-        self.r.curr_ut = target_ut
         self.update_all_positions()
         self.r._update_hud()
 

@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+import numpy as np
 from basic_systems.orbit_pred import Body, Spacecraft
 import numpy as np
 import pyvista as pv
@@ -55,8 +55,17 @@ class SceneBuilder:
         )
 
     def _compute_timeline_max_ut(self) -> float:
-            periods = [b.orbit.period for b in self.r.body_list if b.orbit and b.orbit.period > 0]
-            return max(periods) * 1.5 if periods else 3.15e7
+        periods = [
+            b.orbit.period
+            for b in self.r.body_list
+            if (
+                b.orbit is not None
+                and np.isfinite(b.orbit.period)
+                and b.orbit.period > 0.0
+            )
+        ]
+
+        return max(periods) * 1.5 if periods else 3.15e7
 
     def _create_spacecraft_mesh(self, plotter: pv.Plotter, size: float, spacecraft: Spacecraft) -> tuple[pv.Actor, vtkActor2D]:
             fuselage = pv.Cylinder(center=(0, 0, 0), direction=(0, 0, 1), radius=size * 0.28, height=size * 1.3)

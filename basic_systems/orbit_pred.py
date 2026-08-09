@@ -79,42 +79,110 @@ def format_ut(ut: float, ker_time: bool = False) -> str:
         months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
         return f"{y}-{months[mon-1]}-{d:02d} {h:02d}:{m:02d}:{s:02d} UTC"
 
-def solve_anomaly(mean_anomaly: float, eccen: float):
+def solve_elliptic_anomaly(mean_anomaly: float, eccen: float) -> float:
     epsilon = 1e-12
     max_iter = 100
-    m = np.fmod(mean_anomaly, 2 * np.pi)
-    if m > np.pi: m -= 2 * np.pi
-    if m < -np.pi: m += 2 * np.pi
-    
-    if eccen < 1.0:
-        E = m
-        for _ in range(max_iter):
-            delta_E = (E - eccen * np.sin(E) - m) / (1 - eccen * np.cos(E))
-            E -= delta_E
-            if abs(delta_E) < epsilon:
-                break
-        return E
-    elif eccen > 1.0:
-        m = mean_anomaly
-        H = 0.0
-        if abs(m) > 0.1:
-            H = np.asinh(m / eccen)
-        
-        for _ in range(max_iter):
-            delta_H = (eccen * np.sinh(H) - H - m) / (eccen * np.cosh(H) - 1)
-            H -= delta_H
-            if abs(delta_H) < epsilon:
-                break
-        return H
-    else:
-        e_eff = 0.9999999999
-        E = m
-        for _ in range(max_iter):
-            delta_E = (E - e_eff * np.sin(E) - m) / (1 - e_eff * np.cos(E))
-            E -= delta_E
-            if abs(delta_E) < epsilon:
-                break
-        return E
+
+    if not np.isfinite(mean_anomaly):
+        raise ValueError(f"Invalid mean anomaly: {mean_anomaly}")
+
+    m = np.fmod(mean_anomaly, 2.0 * np.pi)
+
+    if m > np.pi:
+        m -= 2.0 * np.pi
+    elif m < -np.pi:
+        m += 2.0 * np.pi
+
+    # Good starting point for Newton iteration.
+    E = m if eccen < 0.8 else np.pi
+
+    for _ in range(max_iter):
+        f = E - eccen * np.sin(E) - m
+        fp = 1.0 - eccen * np.cos(E)
+
+        if abs(fp) < epsilon:
+            raise RuntimeError("Elliptic Kepler solver became singular.")
+
+        delta = f / fp
+        E -= delta
+
+        if abs(delta) < epsilon:
+            return E
+
+    raise RuntimeError(
+        f"Elliptic Kepler solver did not converge: "
+        f"M={mean_anomaly}, e={eccen}"
+    )
+
+
+def solve_hyperbolic_anomaly(mean_anomaly: float, eccen: float) -> float:
+    epsilon = 1e-12
+    max_iter = 100
+
+    if not np.isfinite(mean_anomaly):
+        raise ValueError(f"Invalid mean anomaly: {mean_anomaly}")
+
+    H = np.arcsinh(mean_anomaly / eccen)
+
+    for _ in range(max_iter):
+        sinh_h = np.sinh(H)
+        cosh_h = np.cosh(H)
+
+        f = eccen * sinh_h - H - mean_anomaly
+        fp = eccen * cosh_h - 1.0
+
+        if abs(fp) < epsilon:
+            raise RuntimeError("Hyperbolic Kepler solver became singular.")
+
+        delta = f / fp
+        H -= delta
+
+        if abs(delta) < epsilon:
+            return H
+
+    raise RuntimeError(
+        f"Hyperbolic Kepler solver did not converge: "
+        f"M={mean_anomaly}, e={eccen}"
+    )
+
+
+def solve_parabolic_anomaly(parabolic_mean_anomaly: float) -> float:
+    """
+    Barker's equation:
+
+        M_p = D + D^3 / 3
+
+    where D = tan(nu / 2).
+    """
+
+    if not np.isfinite(parabolic_mean_anomaly):
+        raise ValueError(
+            f"Invalid parabolic mean anomaly: "
+            f"{parabolic_mean_anomaly}"
+        )
+
+    M = parabolic_mean_anomaly
+
+    # Real cube roots are important here.
+    A = 1.5 * M
+    B = np.sqrt(1.0 + 2.25 * M * M)
+
+    return np.cbrt(A + B) + np.cbrt(A - B)
+
+def solve_anomaly(mean_anomaly: float, eccen: float) -> float:
+    epsilon = 1e-10
+
+    if not np.isfinite(eccen):
+        raise ValueError(f"Invalid eccentricity: {eccen}")
+
+    if eccen < 1.0 - epsilon:
+        return solve_elliptic_anomaly(mean_anomaly, eccen)
+
+    if eccen > 1.0 + epsilon:
+        return solve_hyperbolic_anomaly(mean_anomaly, eccen)
+
+    # e ≈ 1
+    return solve_parabolic_anomaly(mean_anomaly)
 
 class Orbit:
     def __init__(self, a: float = 0.0, e: float = 0.0, arg_p: float = 0.0, lon_of_asc: float = 0.0, 
