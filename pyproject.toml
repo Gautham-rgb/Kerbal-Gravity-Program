@@ -20,7 +20,7 @@ keywords = [
     "astrodynamics",
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: Alpha",
     "Intended Audience :: End Users/Desktop",
     "Intended Audience :: Science/Research",
     "Operating System :: OS Independent",
