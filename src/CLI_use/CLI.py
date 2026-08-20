@@ -1889,9 +1889,16 @@ class REPL:
 def main():
     import argparse
 
+    from basic_systems import __version__
+
     parser = argparse.ArgumentParser(
         prog="kgrp",
         description="Kerbal Gravity Program — mission planning REPL",
+    )
+    parser.add_argument(
+        "--version", "-V",
+        action="version",
+        version=f"kerbalgravityprog {__version__}",
     )
     parser.add_argument(
         "--system", "-s",

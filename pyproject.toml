@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "kerbalgravityprog"
@@ -52,11 +52,16 @@ render = [
 [project.scripts]
 kgrp = "CLI_use.CLI:main"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+# The single source of truth for the version is ``__version__`` in
+# ``src/basic_systems/__init__.py`` — both the program and users can do
+# ``import basic_systems; basic_systems.__version__``.
+[tool.hatch.version]
+source = "code"
+path = "src/basic_systems/__init__.py"
+expression = "__version__"
 
-[tool.setuptools.package-data]
-basic_systems = ["data/*.json"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/basic_systems", "src/CLI_use"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

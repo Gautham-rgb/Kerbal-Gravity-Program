@@ -9,6 +9,8 @@ actually want to draw something.
 from importlib import resources
 import os
 
+__version__ = "0.1.0"
+
 
 def example_system_path(name: str) -> str:
     """Return the absolute path to a bundled example system JSON.
