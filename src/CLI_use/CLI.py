@@ -363,12 +363,13 @@ class REPL:
         target = args[0].lower()
 
         if target == "system":
-            self.system = System.load(args[1])
+            path = self._resolve_example_path(args[1])
+            self.system = System.load(path)
             if not self._validate_and_report(self.system):
                 print("System rejected: fix the errors and try again.")
                 self.system = None
             else:
-                self.system_path = str(args[1])
+                self.system_path = str(path)
         elif target == "ticket":
             if self.system is None:
                 print("Please import your system first using load system path/to/file.json")
@@ -843,6 +844,23 @@ class REPL:
                 continue
                 current_body = child
 
+
+    def _resolve_example_path(self, arg: str) -> str:
+        """Resolve a ``load system`` argument to a file path.
+
+        If the literal path doesn't exist, fall back to a bundled example
+        system of the same name (e.g. ``planets_ksp`` -> the shipped
+        ``planets_ksp.json``). This lets a fresh install run the quickstart
+        without hunting for data files.
+        """
+        if os.path.exists(arg):
+            return arg
+        try:
+            from basic_systems import example_system_path
+        except Exception:
+            return arg
+        candidate = example_system_path(arg)
+        return candidate if os.path.exists(candidate) else arg
 
     def _validate_and_report(self, system) -> bool:
         result = validate_system(system)

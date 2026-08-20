@@ -1,31 +1,62 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "kerbalgravityprog"
 version = "0.1.0"
+description = "Mission planner for Kerbal Space Program — model orbits, transfers, and maneuvers from outside the game."
+readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "kaart" }]
+keywords = [
+    "kerbal",
+    "ksp",
+    "orbital-mechanics",
+    "mission-planner",
+    "space",
+    "astrodynamics",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Astronomy",
+    "Topic :: Games/Entertainment :: Simulation",
+]
+
 dependencies = [
     "numpy",
     "scipy",
+    "rich",
+    "prompt-toolkit",
+]
+
+[project.optional-dependencies]
+render = [
     "pyvista",
     "pyside6",
     "pyvistaqt",
     "trame",
     "trame-vtk",
     "trame-vuetify",
-    "rich",
-    "prompt-toolkit",
-]
-
-[tool.setuptools.packages.find]
-where = ["."]
-include = [
-    "CLI_use",
-    "CLI_use.*",
-    "basic_systems",
-    "basic_systems.*",
 ]
 
 [project.scripts]
 kgrp = "CLI_use.CLI:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+basic_systems = ["data/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
