@@ -102,9 +102,20 @@ class ControlManager:
         self.r.plotter.render()
 
     def _on_body_picked(self, actor):
+        node_info = self.r.maneuver_node_actors.get(actor)
+        if node_info is not None:
+            self.r.select_maneuver_node(
+                node_info["ticket"],
+                node_info["event"],
+                node_info["node"],
+            )
+            return
+
         body = self._actor_to_body.get(actor)
 
         if body is not None:
+            self.r.selected_info = None
+            self.r._update_hud_node_details()
             self.focus_on_body(body)
 
     def focus_next_body(self):

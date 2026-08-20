@@ -15,5 +15,17 @@ dependencies = [
     "prompt-toolkit",
 ]
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+    "CLI_use",
+    "CLI_use.*",
+    "basic_systems",
+    "basic_systems.*",
+]
+
 [project.scripts]
-kgrp = "kerbalgravityprog.cli:main"
+kgrp = "CLI_use.CLI:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

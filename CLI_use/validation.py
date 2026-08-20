@@ -3,11 +3,6 @@ from dataclasses import dataclass
 
 from basic_systems.builder import System
 from basic_systems.orbit_pred import Body
-from basic_systems.renderer.loader import load_system
-
-
-system = load_system(r"C:\Users\kaart\KerbalGravityProg\planets.json")
-
 
 @dataclass
 class ValidationResult:
@@ -24,7 +19,6 @@ def validate_system(system: System) -> ValidationResult:
     seen_ids: set[str] = set()
 
     def visit(body: Body):
-        # ---------- Identifier ----------
         if body.identifier is not None:
             if body.identifier in seen_ids:
                 result.errors.append(
@@ -34,7 +28,6 @@ def validate_system(system: System) -> ValidationResult:
             else:
                 seen_ids.add(body.identifier)
 
-        # ---------- Physical properties ----------
         if not np.isfinite(body.mu):
             result.errors.append(
                 f"Body '{body.name}' has a non-finite μ."
@@ -62,11 +55,26 @@ def validate_system(system: System) -> ValidationResult:
                 f"Body '{body.name}' has a negative atmosphere height."
             )
 
-        # ---------- Orbit ----------
+        rotation_period = getattr(body, "rotation_period_s", 0.0)
+
+        if not np.isfinite(rotation_period):
+            result.errors.append(
+                f"Body '{body.name}' has a non-finite rotation period."
+            )
+        elif rotation_period < 0:
+            result.errors.append(
+                f"Body '{body.name}' has a negative rotation period "
+                f"({rotation_period})."
+            )
+        elif rotation_period == 0:
+            result.warnings.append(
+                f"Body '{body.name}' has no rotation period; "
+                f"synchronous-orbit planning is unavailable for it."
+            )
+
         if body.orbit is not None:
             orbit = body.orbit
 
-            # Skip parent-dependent checks for the root body.
             if orbit.parent is not None:
                 if orbit.parent is body:
                     result.errors.append(
@@ -100,7 +108,6 @@ def validate_system(system: System) -> ValidationResult:
                         f"Body '{body.name}' intersects its parent at periapsis."
                     )
 
-            # These checks apply to every orbit, including the root's dummy orbit.
             if not np.isfinite(orbit.inclination):
                 result.errors.append(
                     f"Body '{body.name}' has a non-finite inclination."
@@ -119,6 +126,3 @@ def validate_system(system: System) -> ValidationResult:
 
     visit(system.root)
     return result
-
-result = validate_system(system)
-print(result.ok)

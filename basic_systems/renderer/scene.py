@@ -79,7 +79,7 @@ class SceneBuilder:
                 combined, color="#d9f6ff", smooth_shading=True, specular=0.65, specular_power=28
             )
             
-            label_position = [0, 0, size * 0.8]
+            label_position = (spacecraft.get_absolute_pos_at_ut(self.r.curr_ut) * self.r.distance_scale).tolist()
             label_text = spacecraft.name if spacecraft.name else "Droplet 1"
 
             cube_label_actor = plotter.add_point_labels(
@@ -151,6 +151,7 @@ class SceneBuilder:
             self._add_spacecraft_trajectory(sc, sc_size)
 
         self._add_maneuver_markers(sc_size)
+        self._add_event_markers(sc_size)
 
         self.r.updater.update_all_positions()
         
@@ -168,16 +169,56 @@ class SceneBuilder:
         stars = pv.PolyData(points)
         self.r.plotter.add_points(stars, color="#cdd8ff", point_size=1.3, render_points_as_spheres=True, pickable=False)
 
+    def _collect_burn_intervals(self, spacecraft: Spacecraft) -> list[tuple[float, float]]:
+        """Return [start, end] UT windows during which *spacecraft* burns."""
+        intervals: list[tuple[float, float]] = []
+        for ticket in self.r.tickets:
+            if getattr(ticket, "spacecraft", None) is not spacecraft:
+                continue
+            for event in ticket.events:
+                start = getattr(event, "start_ut", None)
+                if start is None:
+                    continue
+                end = getattr(event, "end_ut", None)
+                if hasattr(event, "direction") and end is not None and end > start:
+                    intervals.append((float(start), float(end)))
+                node = getattr(event, "node", None)
+                if node is not None:
+                    intervals.append((float(node.ut), float(node.ut) + 60.0))
+        return intervals
+
     def _add_spacecraft_trajectory(self, spacecraft: Spacecraft, size: float) -> None:
         period = spacecraft.orbit.period
         if not np.isfinite(period) or period <= 0:
             return
+
+        burn_intervals = self._collect_burn_intervals(spacecraft)
         times = np.linspace(self.r.curr_ut, self.r.curr_ut + period, max(80, self.r.num_line_segments))
         points = np.array([spacecraft.get_absolute_pos_at_ut(time) for time in times]) * self.r.distance_scale
-        trajectory = pv.lines_from_points(points.astype(np.float32), close=False)
-        self.r.orbit_actors.append(
-            self.r.plotter.add_mesh(trajectory, color="#71e7ff", opacity=0.82, line_width=2.4, pickable=False)
-        )
+
+        def in_burn(t: float) -> bool:
+            return any(s <= t <= e for s, e in burn_intervals)
+
+        i = 0
+        n = len(times)
+        while i < n - 1:
+            is_burn = in_burn(times[i]) or in_burn(times[i + 1])
+            j = i
+            while j < n - 1:
+                if (in_burn(times[j]) or in_burn(times[j + 1])) != is_burn:
+                    break
+                j += 1
+            segment = points[i:j + 1]
+            if len(segment) >= 2:
+                poly = pv.lines_from_points(segment.astype(np.float32), close=False)
+                if is_burn:
+                    color, opacity, width = "#ff7a3c", 1.0, 3.2
+                else:
+                    color, opacity, width = "#71e7ff", 0.82, 2.4
+                self.r.orbit_actors.append(
+                    self.r.plotter.add_mesh(poly, color=color, opacity=opacity, line_width=width, pickable=False)
+                )
+            i = j
 
     def _add_maneuver_markers(self, size: float) -> None:
         for ticket in self.r.tickets:
@@ -185,9 +226,45 @@ class SceneBuilder:
                 node = getattr(event, "node", None)
                 if node is None:
                     continue
-                pos, _ = ticket.spacecraft.state_at(node.ut)
-                marker = pv.Sphere(radius=size * 0.65, center=pos * self.r.distance_scale)
-                actor = self.r.plotter.add_mesh(marker, color="#ffb347", lighting=False, pickable=False)
+                pos = np.array(ticket.spacecraft.get_absolute_pos_at_ut(node.ut))
+                marker = pv.Sphere(radius=size * 0.75, center=pos * self.r.distance_scale)
+                actor = self.r.plotter.add_mesh(
+                    marker,
+                    color="#ffae46",
+                    lighting=False,
+                    specular=0.9,
+                    specular_power=25,
+                    pickable=True,
+                )
+                self.r.maneuver_actors.append(actor)
+                self.r.maneuver_node_actors[actor] = {
+                    "ticket": ticket,
+                    "event": event,
+                    "node": node,
+                }
+
+    def _add_event_markers(self, size: float) -> None:
+        """Show small spheres at each event's scheduled UT position."""
+        for ticket in self.r.tickets:
+            for event in ticket.events:
+                if getattr(event, "completed", False):
+                    continue
+                try:
+                    pos = np.array(ticket.spacecraft.get_absolute_pos_at_ut(event.start_ut))
+                except Exception:
+                    continue
+                marker = pv.Sphere(
+                    radius=size * 0.5,
+                    center=pos * self.r.distance_scale,
+                )
+                actor = self.r.plotter.add_mesh(
+                    marker,
+                    color=self.r.event_marker_color,
+                    opacity=0.7,
+                    lighting=False,
+                    pickable=False,
+                    name=f"event-{id(event)}",
+                )
                 self.r.maneuver_actors.append(actor)
 
     def build(self):

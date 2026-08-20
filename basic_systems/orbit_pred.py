@@ -1,8 +1,20 @@
+"""Orbital mechanics simulation core for the mission planner.
+
+This module is the importable simulation layer: it defines the body/orbit
+hierarchy (:class:`Body`, :class:`Orbit`), spacecraft state and manoeuvres
+(:class:`Spacecraft`, :class:`ManeuverNode`, :class:`ManeuverPlanner`), the
+Kerbal/real calendars (:class:`TimeUnits`, :data:`KERBAL_UNITS`,
+:data:`REAL_UNITS`), time parsing/formatting helpers and the universal-variable
+:class:`LambertSolver`. Distances are in metres, times in seconds (UT, seconds
+since the calendar epoch) and velocities in m/s unless noted otherwise.
+"""
+
 from __future__ import annotations
 
 import numpy as np
 import datetime as dtime
 import copy
+import re
 from dataclasses import dataclass, field
 try:
     from pyvista import Sphere, Cube
@@ -13,6 +25,8 @@ import itertools
 
 @dataclass
 class Constants:
+    """Stock Kerbal calendar divisors used as defaults by :class:`TimeUnits`."""
+
     KER_YEAR_DAY: int = 426
     KER_DAY_HOUR: int = 6
     KER_HOUR_MIN: int = 60
@@ -20,7 +34,41 @@ class Constants:
     KER_YEAR_SEC: float = 9201600.0
     KER_DAY_SEC: float = 21600.0
 
-def get_ut_secs(year: int, month: int, day: int, hour: int, minute: int, seconds: int = 0, ker_time = False, am_pm: None | Literal["AM", "PM", "am", "pm"] = None):
+@dataclass(frozen=True)
+class TimeUnits:
+    """A custom calendar for converting between (year, day, hour, minute,
+    second) and raw UT seconds.
+
+    Pass an instance as ``units`` to :func:`get_ut_secs`,
+    :func:`ut_secs_to_date_components` or :func:`format_ut` to override the
+    stock Kerbal calendar (``KERBAL_UNITS``). A 365-day, 24-hour calendar is
+    just ``TimeUnits(year_days=365, day_hours=24)``.
+    """
+    year_days: int = Constants.KER_YEAR_DAY
+    day_hours: int = Constants.KER_DAY_HOUR
+    hour_minutes: int = Constants.KER_HOUR_MIN
+    minute_seconds: int = Constants.KER_MIN_SEC
+
+    @property
+    def day_seconds(self) -> float:
+        return float(self.day_hours * self.hour_minutes * self.minute_seconds)
+
+    @property
+    def year_seconds(self) -> float:
+        return float(self.year_days * self.day_seconds)
+
+
+KERBAL_UNITS = TimeUnits()  # Stock Kerbal calendar (426-day year, 6-hour day).
+REAL_UNITS = TimeUnits(year_days=365, day_hours=24, hour_minutes=60, minute_seconds=60)  # Gregorian-style 365-day calendar.
+
+def get_ut_secs(year: int, month: int, day: int, hour: int, minute: int, seconds: int = 0, ker_time = False, am_pm: None | Literal["AM", "PM", "am", "pm"] = None, units: TimeUnits | None = None):
+    """Convert a calendar timestamp into raw UT seconds.
+
+    With ``ker_time`` (or a non-default ``units`` calendar) the arguments are
+    interpreted against that calendar's year/day/hour/minute divisions. Otherwise
+    they are treated as a real (Gregorian) date from J2000 and returned as
+    seconds since the J2000 epoch. ``am_pm`` optionally shifts a 12-hour clock.
+    """
 
     if am_pm is not None:
         am_pm_upper = am_pm.upper()
@@ -29,15 +77,16 @@ def get_ut_secs(year: int, month: int, day: int, hour: int, minute: int, seconds
         elif am_pm_upper == "AM" and hour == 12:
             hour = 0
 
-    if ker_time:
+    if ker_time or units is not None:
+        u = units or KERBAL_UNITS
         elapsed_years = year - 1
         elapsed_days = day - 1
-        
+
         time_conversions = (
-            (elapsed_years, Constants.KER_YEAR_SEC),
-            (elapsed_days, Constants.KER_DAY_SEC),
-            (hour, Constants.KER_HOUR_MIN * Constants.KER_MIN_SEC),
-            (minute, Constants.KER_MIN_SEC),
+            (elapsed_years, u.year_seconds),
+            (elapsed_days, u.day_seconds),
+            (hour, u.hour_minutes * u.minute_seconds),
+            (minute, u.minute_seconds),
             (seconds, 1)
         )
 
@@ -53,31 +102,218 @@ def get_ut_secs(year: int, month: int, day: int, hour: int, minute: int, seconds
         )
         return (target_date - j2000_epoch).total_seconds()
 
-def ut_secs_to_date_components(ut: float, ker_time: bool = False):
+def ut_secs_to_date_components(ut: float, ker_time: bool = False, units: TimeUnits | None = None):
     """Convert UT seconds back to date components (Y, M, D, H, M, S)."""
-    if ker_time:
-        y = int(ut // Constants.KER_YEAR_SEC) + 1
-        rem = ut % Constants.KER_YEAR_SEC
-        d = int(rem // Constants.KER_DAY_SEC) + 1
-        rem %= Constants.KER_DAY_SEC
-        h = int(rem // (Constants.KER_HOUR_MIN * Constants.KER_MIN_SEC))
-        rem %= (Constants.KER_HOUR_MIN * Constants.KER_MIN_SEC)
-        m = int(rem // Constants.KER_MIN_SEC)
-        s = int(rem % Constants.KER_MIN_SEC)
+    if ker_time or units is not None:
+        u = units or KERBAL_UNITS
+        y = int(ut // u.year_seconds) + 1
+        rem = ut % u.year_seconds
+        d = int(rem // u.day_seconds) + 1
+        rem %= u.day_seconds
+        h = int(rem // (u.hour_minutes * u.minute_seconds))
+        rem %= (u.hour_minutes * u.minute_seconds)
+        m = int(rem // u.minute_seconds)
+        s = int(rem % u.minute_seconds)
         return y, 0, d, h, m, s # Month is 0 for Kerbal time
     else:
         j2000_epoch = dtime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=dtime.timezone.utc)
         dt = j2000_epoch + dtime.timedelta(seconds=ut)
         return dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second
 
-def format_ut(ut: float, ker_time: bool = False) -> str:
+def format_ut(ut: float, ker_time: bool = False, units: TimeUnits | None = None) -> str:
     """Format UT seconds as a human-readable string."""
-    y, mon, d, h, m, s = ut_secs_to_date_components(ut, ker_time)
-    if ker_time:
+    y, mon, d, h, m, s = ut_secs_to_date_components(ut, ker_time, units)
+    if ker_time or units is not None:
         return f"Year {y}, Day {d}, {h:02d}:{m:02d}:{s:02d}"
     else:
         months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
         return f"{y}-{months[mon-1]}-{d:02d} {h:02d}:{m:02d}:{s:02d} UTC"
+
+
+_TIME_TOKEN_RE = re.compile(r"^([0-9]+(?:\.[0-9]+)?)\s*([a-zA-Z]+)$")
+_CLOCK_RE = re.compile(r"^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$")
+_YEAR_UNITS = {"y", "yr", "year", "years"}
+_MONTH_UNITS = {"mo", "mon", "month", "months"}
+_DAY_UNITS = {"d", "day", "days"}
+_HOUR_UNITS = {"h", "hr", "hour", "hours"}
+_MINUTE_UNITS = {"m", "min", "mins", "minute", "minutes"}
+_SECOND_UNITS = {"s", "sec", "secs", "second", "seconds"}
+
+
+def _time_multiplier(unit: str, units: TimeUnits) -> float | None:
+    key = unit.lower()
+    if key in _YEAR_UNITS:
+        return units.year_seconds
+    if key in _MONTH_UNITS:
+        return units.year_seconds / 12.0
+    if key in _DAY_UNITS:
+        return units.day_seconds
+    if key in _HOUR_UNITS:
+        return float(units.hour_minutes * units.minute_seconds)
+    if key in _MINUTE_UNITS:
+        return float(units.minute_seconds)
+    if key in _SECOND_UNITS:
+        return 1.0
+    return None
+
+
+# --- Friendly (but still useful) error quirks --------------------------------
+#
+# Time parsing is the single most common place a new user faceplants, so the
+# errors there get to be a little silly. The quips are chosen deterministically
+# from the offending unit so the same typo always gets the same gentle ribbing.
+
+_KNOWN_TIME_UNITS = ("s", "m", "h", "d", "mo", "y")
+
+
+def _quirk_index(word: str) -> int:
+    return sum(ord(ch) for ch in word) % 3
+
+
+def _unknown_time_unit_quip(unit: str) -> str:
+    quips = [
+        f"Unknown time unit '{unit}'. We measure in s, m, h, d, mo, y — '{unit}' is still "
+        f"awaiting approval from the Kerbal Calendar Committee.",
+        f"Time unit '{unit}'? Ambitious. The accepted ones are s, m, h, d, mo, y, and "
+        f"'{unit}' didn't make the cut.",
+        f"'{unit}' isn't a unit of time we recognise. Try s, m, h, d, mo, y "
+        f"(the universe hasn't reached '{unit}' yet).",
+    ]
+    return quips[_quirk_index(unit)]
+
+
+def _missing_unit_quip(number: str) -> str:
+    quips = [
+        f"'{number}' on its own is ambiguous. Tag on a unit (s/m/h/d/mo/y), e.g. '{number}d', "
+        f"or just type '{number}' as the whole input to mean raw UT seconds.",
+        f"Almost! '{number}' needs a unit. Try '{number}s' for seconds or '{number}d' for days "
+        f"(s/m/h/d/mo/y all work).",
+        f"Bare number '{number}' spotted with no unit. We're not mind-readers — add s/m/h/d/mo/y, "
+        f"or pass '{number}' alone to mean raw UT seconds.",
+    ]
+    return quips[_quirk_index(number)]
+
+
+def parse_time_string(text: str, units: TimeUnits | None = None, base: float = 0.0) -> float:
+    """Parse a human time string into UT seconds.
+
+    Accepted forms (case-insensitive, commas/spaces optional):
+
+    * A bare number: raw UT seconds (e.g. ``"21600"``).
+    * A duration of tokens: ``"1y 2mo 3d 4h 5m 6s"``, ``"2d 5h"``, ``"90s"``,
+      ``"2 days 3 hours"``. Returned as ``base`` plus the elapsed seconds
+      (``base`` defaults to 0). Years and days use the given calendar (Kerbal
+      by default); a month is one twelfth of a year.
+    * A calendar timestamp: ``"Year 2, Day 100, 12:30:00"``, ``"2y 100d 12:30"``.
+      Interpreted as an absolute UT from the start of the calendar (``base``
+      ignored).
+    """
+    u = units or KERBAL_UNITS
+    if base is None:
+        base = 0.0
+    text = str(text).strip()
+    if not text:
+        raise ValueError("Empty time string.")
+
+    try:
+        return float(text)
+    except ValueError:
+        pass
+
+    calendar_match = _CALENDAR_RE.match(text)
+    if calendar_match:
+        year, day = int(calendar_match.group(1)), int(calendar_match.group(2))
+        hours = int(calendar_match.group(3) or 0.0)
+        minutes = int(calendar_match.group(4) or 0.0)
+        seconds = int(calendar_match.group(5) or 0.0)
+        return float(get_ut_secs(year, 1, day, hours, minutes, seconds, ker_time=True, units=u))
+
+    tokens = [token for token in re.split(r"[,\s]+", _normalize_time_labels(text)) if token]
+    year, day = 1, 1
+    hours = minutes = seconds = 0.0
+    duration = 0.0
+    calendar = False
+
+    for idx, token in enumerate(tokens):
+        clock = _CLOCK_RE.match(token)
+        if clock:
+            calendar = True
+            hours += float(clock.group(1))
+            minutes += float(clock.group(2))
+            if clock.group(3):
+                seconds += float(clock.group(3))
+            continue
+
+        match = _TIME_TOKEN_RE.match(token)
+        if match is None:
+            # A bare number with no unit (e.g. "5" in "5 bananas"/"5 eras") is a common slip.
+            if re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", token):
+                nxt = tokens[idx + 1] if idx + 1 < len(tokens) else None
+                if nxt and re.fullmatch(r"[A-Za-z]+", nxt):
+                    raise ValueError(
+                        _unknown_time_unit_quip(nxt)
+                        + f"  (Looks like you typed '{token} {nxt}' — if you meant a duration, "
+                        f"smoosh them together with a real unit, e.g. '{token}d' or '{token}mo'.)"
+                    )
+                raise ValueError(_missing_unit_quip(token))
+            raise ValueError(
+                _unknown_time_unit_quip(token)
+                if re.search(r"[A-Za-z]", token)
+                else f"Unrecognized time token '{token}'. Example: 'advance 2d 5h' or 'time 21600'."
+            )
+        value = float(match.group(1))
+        unit = match.group(2).lower()
+
+        if unit in _YEAR_UNITS:
+            calendar = True
+            year = int(value)
+        elif unit in _DAY_UNITS:
+            if calendar:
+                day = int(value)
+            else:
+                duration += value * u.day_seconds
+        elif unit in _MONTH_UNITS:
+            duration += value * (u.year_seconds / 12.0)
+        else:
+            multiplier = _time_multiplier(unit, u)
+            if multiplier is None:
+                raise ValueError(_unknown_time_unit_quip(unit))
+            if calendar:
+                if unit in _HOUR_UNITS:
+                    hours += value
+                elif unit in _MINUTE_UNITS:
+                    minutes += value
+                else:
+                    seconds += value
+            else:
+                duration += value * multiplier
+
+    if calendar:
+        absolute = get_ut_secs(year, 1, day, int(hours), minutes, seconds, ker_time=True, units=u)
+        return float(absolute + duration)
+    return float(base + duration)
+
+
+_CALENDAR_RE = re.compile(
+    r"^(?:(?:year|y)[,\s]*)?([0-9]+)[,\s]+(?:day|d)[,\s]*([0-9]+)"
+    r"(?:[,\s]+([0-9]{1,2}):([0-9]{1,2})(?::([0-9]{1,2}))?)?$",
+    re.IGNORECASE,
+)
+
+_LABEL_TO_SHORT = [
+    ("years", "y"), ("year", "y"), ("months", "mo"), ("month", "mo"),
+    ("days", "d"), ("day", "d"), ("hours", "h"), ("hour", "h"),
+    ("hrs", "h"), ("hr", "h"), ("minutes", "m"), ("minute", "m"),
+    ("mins", "m"), ("min", "m"), ("seconds", "s"), ("second", "s"),
+    ("secs", "s"), ("sec", "s"),
+]
+
+
+def _normalize_time_labels(text: str) -> str:
+    """Turn ``"2 days 3 hours"`` into token form ``"2d 3h"``."""
+    for label, short in _LABEL_TO_SHORT:
+        text = re.sub(rf"([0-9]+(?:\.[0-9]+)?)\s+\b{label}\b", rf"\1{short}", text, flags=re.IGNORECASE)
+    return text
 
 def solve_elliptic_anomaly(mean_anomaly: float, eccen: float) -> float:
     epsilon = 1e-12
@@ -169,8 +405,10 @@ def solve_parabolic_anomaly(parabolic_mean_anomaly: float) -> float:
 
     return np.cbrt(A + B) + np.cbrt(A - B)
 
+PARABOLIC_EPS = 1e-8
+
 def solve_anomaly(mean_anomaly: float, eccen: float) -> float:
-    epsilon = 1e-10
+    epsilon = PARABOLIC_EPS
 
     if not np.isfinite(eccen):
         raise ValueError(f"Invalid eccentricity: {eccen}")
@@ -185,8 +423,18 @@ def solve_anomaly(mean_anomaly: float, eccen: float) -> float:
     return solve_parabolic_anomaly(mean_anomaly)
 
 class Orbit:
-    def __init__(self, a: float = 0.0, e: float = 0.0, arg_p: float = 0.0, lon_of_asc: float = 0.0, 
-                 MA_at_t0: float = 0.0, inclination: float = 0.0, parent: Body|None = None):
+    """Keplerian orbital elements of a body around ``parent`` (for internal use).
+
+    Distances are in metres and angles in radians. ``semi_major_axis`` is ``a``
+    (metres), ``eccen`` the eccentricity, ``arg_p`` the argument of periapsis,
+    ``lon_of_asc`` the longitude of the ascending node, ``MA_at_t0`` the mean
+    anomaly at epoch and ``inclination`` the orbital inclination. ``period`` is
+    derived for closed (elliptical) orbits and is ``inf`` otherwise.
+    """
+
+    def __init__(self, a: float = 0.0, e: float = 0.0, arg_p: float = 0.0, lon_of_asc: float = 0.0,
+                 MA_at_t0: float = 0.0, inclination: float = 0.0, parent: Body|None = None,
+                 periapsis: float | None = None):
         self.parent = parent
         self.semi_major_axis = a
         self.eccen = e
@@ -194,28 +442,57 @@ class Orbit:
         self.lon_of_asc = lon_of_asc
         self.MA_at_t0 = MA_at_t0
         self.inclination = inclination
+        self.periapsis = periapsis
         if parent and parent.mu > 0 and self.semi_major_axis > 0 and self.eccen < 1:
             self.period = 2*np.pi*np.sqrt(self.semi_major_axis**3/parent.mu)
         else:
             self.period = np.inf
 
 class Body:
+    """A celestial body (planet, moon, star) in the system hierarchy.
+
+    ``mu`` is the gravitational parameter (m^3/s^2), ``radius`` the equatorial
+    radius (metres) and ``atm_height`` the atmosphere height (metres). Bodies
+    orbit a ``parent`` body via an :class:`Orbit`; the root body has no parent.
+    ``moons`` lists orbiting children and ``rotation_period_s`` is the sidereal
+    rotation period in seconds. Equality/hashing is by an internal unique id,
+    not by name, so two distinct Body instances are never equal.
+    """
 
     _id_counter = itertools.count()
 
     def __init__(self, name: str, mu: float, identifier: str, radius: float, atm_height: float = 0.0, 
-                 orbit: Orbit | None = None, moons: list[Body] | None = None, render_color: str | None = None) -> None:
+                 orbit: Orbit | None = None, moons: list[Body] | None = None, render_color: str | None = None,
+                 rotation_period_s: float = 0.0) -> None:
         self.name = name
         self.identifier = identifier
         self.mu = mu
         self.radius = radius
         self.atm_height = atm_height
+        self.rotation_period_s = rotation_period_s
         self.orbit = orbit if orbit else Orbit()
         self.moons = moons if moons is not None else []
         self.render_color = render_color
         self.period = 0.0
         self._uid = next(Body._id_counter)
         
+
+    def synchronous_radius(self) -> float | None:
+        """Radius of a circular synchronous orbit (in m), or None if unknown."""
+        if self.mu > 0 and self.rotation_period_s > 0:
+            T = self.rotation_period_s
+            return (self.mu * T * T / (4.0 * np.pi ** 2)) ** (1.0 / 3.0)
+        return None
+
+    def soi_radius(self) -> float | None:
+        """Hill-sphere SOI radius (m) of this body around its parent."""
+        parent = self.orbit.parent
+        if parent is None:
+            return None
+        a = self.orbit.semi_major_axis
+        if a <= 0.0 or not np.isfinite(a):
+            return None
+        return a * (self.mu / parent.mu) ** (2.0 / 5.0)
 
     def to_mesh(self, plotter, scaled_radius):
         if Sphere is None:
@@ -258,25 +535,37 @@ class Body:
     def get_pos_at_ut(self, ut: float):
         if self.orbit.parent is None:
             return np.zeros(3)
-        
-        a, e, mu = self.orbit.semi_major_axis, self.orbit.eccen, self.orbit.parent.mu
-        n = np.sqrt(np.abs(mu / a ** 3))
-        mean_anomaly = self.orbit.MA_at_t0 + n * ut
-        anomaly = solve_anomaly(mean_anomaly, e)
 
-        if e < 1.0:
+        a, e, mu = self.orbit.semi_major_axis, self.orbit.eccen, self.orbit.parent.mu
+
+        if e < 1.0 - PARABOLIC_EPS:
+            n = np.sqrt(np.abs(mu / a ** 3))
+            mean_anomaly = self.orbit.MA_at_t0 + n * ut
+            anomaly = solve_anomaly(mean_anomaly, e)
             cosA, sinA = np.cos(anomaly), np.sin(anomaly)
             x_perifocal = a * (cosA - e)
             y_perifocal = a * np.sqrt(1.0 - e**2) * sinA
-        elif e > 1.0:
+        elif e > 1.0 + PARABOLIC_EPS:
+            n = np.sqrt(np.abs(mu / a ** 3))
+            mean_anomaly = self.orbit.MA_at_t0 + n * ut
+            anomaly = solve_anomaly(mean_anomaly, e)
             a_abs = np.abs(a)
             coshA, sinhA = np.cosh(anomaly), np.sinh(anomaly)
             x_perifocal = a_abs * (e - coshA)
             y_perifocal = a_abs * np.sqrt(e**2 - 1.0) * sinhA
         else:
-            cosA, sinA = np.cos(anomaly), np.sin(anomaly)
-            x_perifocal = a * (cosA - e)
-            y_perifocal = a * sinA
+            q = self.orbit.periapsis
+            if q is None or not np.isfinite(q) or q <= 0.0:
+                q = a * (1.0 - e) if e <= 1.0 else abs(a) * (e - 1.0)
+            if q > 0.0 and np.isfinite(q):
+                n = np.sqrt(mu / (2.0 * q ** 3))
+                mean_anomaly = self.orbit.MA_at_t0 + n * ut
+                D = solve_parabolic_anomaly(mean_anomaly)
+                x_perifocal = q * (1.0 - D * D)
+                y_perifocal = 2.0 * q * D
+            else:
+                x_perifocal = 0.0
+                y_perifocal = 0.0
 
         pos_perifocal = np.array([x_perifocal, y_perifocal, 0.], np.float64)
 
@@ -298,28 +587,40 @@ class Body:
     def get_vel_at_ut(self, ut: float):
         if self.orbit.parent is None:
             return np.zeros(3)
-        
-        a, e, mu = self.orbit.semi_major_axis, self.orbit.eccen, self.orbit.parent.mu
-        n = np.sqrt(np.abs(mu / a ** 3))
-        mean_anomaly = self.orbit.MA_at_t0 + n * ut
-        anomaly = solve_anomaly(mean_anomaly, e)
 
-        if e < 1.0:
+        a, e, mu = self.orbit.semi_major_axis, self.orbit.eccen, self.orbit.parent.mu
+
+        if e < 1.0 - PARABOLIC_EPS:
+            n = np.sqrt(np.abs(mu / a ** 3))
+            mean_anomaly = self.orbit.MA_at_t0 + n * ut
+            anomaly = solve_anomaly(mean_anomaly, e)
             cosA, sinA = np.cos(anomaly), np.sin(anomaly)
             v_coef = np.sqrt(mu * a) / (a * (1.0 - e * cosA))
             vx_perifocal = -v_coef * sinA
             vy_perifocal = v_coef * np.sqrt(1.0 - e**2) * cosA
-        elif e > 1.0:
+        elif e > 1.0 + PARABOLIC_EPS:
+            n = np.sqrt(np.abs(mu / a ** 3))
+            mean_anomaly = self.orbit.MA_at_t0 + n * ut
+            anomaly = solve_anomaly(mean_anomaly, e)
             a_abs = np.abs(a)
             coshA, sinhA = np.cosh(anomaly), np.sinh(anomaly)
             v_coef = np.sqrt(mu * a_abs) / (a_abs * (e * coshA - 1.0))
             vx_perifocal = -v_coef * sinhA
             vy_perifocal = v_coef * np.sqrt(e**2 - 1.0) * coshA
         else:
-            cosA, sinA = np.cos(anomaly), np.sin(anomaly)
-            v_coef = np.sqrt(mu / a)
-            vx_perifocal = -v_coef * sinA
-            vy_perifocal = v_coef * cosA
+            q = self.orbit.periapsis
+            if q is None or not np.isfinite(q) or q <= 0.0:
+                q = a * (1.0 - e) if e <= 1.0 else abs(a) * (e - 1.0)
+            if q > 0.0 and np.isfinite(q):
+                n = np.sqrt(mu / (2.0 * q ** 3))
+                mean_anomaly = self.orbit.MA_at_t0 + n * ut
+                D = solve_parabolic_anomaly(mean_anomaly)
+                v_coef = np.sqrt(mu / (2.0 * q)) * 2.0 / (1.0 + D * D)
+                vx_perifocal = -v_coef * D
+                vy_perifocal = v_coef
+            else:
+                vx_perifocal = 0.0
+                vy_perifocal = 0.0
 
         vel_perifocal = np.array([vx_perifocal, vy_perifocal, 0.], np.float64)
 
@@ -349,6 +650,14 @@ class Barycenter(Body):
         self.moons.extend([self.child_A, self.child_B])
 
 class LambertSolver:
+    """Universal-variable Lambert solver for a two-point boundary transfer.
+
+    Given an initial and final position (metres) and a time of flight (seconds)
+    around a body of gravitational parameter ``root_mu`` (m^3/s^2), ``solve``
+    returns the required initial and final velocity vectors (m/s). Set
+    ``long_way=True`` to take the transfer arc going the long way around.
+    """
+
     def __init__(self, root_mu: float):
         self.mu = root_mu
         self.solved = False
@@ -522,7 +831,17 @@ class VesselSnapshot:
 
 
 class Spacecraft(Body):
-    def __init__(self, name: str, r0: np.ndarray, v0: np.ndarray, t0: float, parent: Body, 
+    """A controllable vessel, modelled as a Body with parts, fuel and engines.
+
+    Constructed from an initial relative position ``r0`` (metres) and velocity
+    ``v0`` (m/s) at epoch ``t0`` (seconds) around its ``parent`` body, plus
+    ``dry_mass``/``wet_mass`` (kg). It derives its own :class:`Orbit` from the
+    state and tracks :class:`Part`\\ s, :class:`ResourceTank`\\ s and
+    :class:`Engine`\\ s. Use the ``apply_impulse``/``advance_burn``/``snapshot``/
+    ``restore`` methods to fly it; never mutate its state directly.
+    """
+
+    def __init__(self, name: str, r0: np.ndarray, v0: np.ndarray, t0: float, parent: Body,
                  dry_mass: float, wet_mass: float, hull_mesh, identifier: str = "", render_color: str = "#ffffff"):
         if dry_mass < 0 or wet_mass < dry_mass:
             raise ValueError("Wet mass must be greater than or equal to dry mass.")
@@ -637,6 +956,18 @@ class Spacecraft(Body):
     ) -> None:
         part = self._part(part_id)
         part.engines.append(Engine(name or f"Engine {len(self.engines) + 1}", thrust, isp, propellants or {"LiquidFuel": 1.0}, offset=offset, mesh=mesh))
+
+    def remove_engine(self, index: int) -> Engine:
+        engines = self.engines
+        if not 0 <= index < len(engines):
+            raise IndexError(f"Engine index {index} is out of range (0-{len(engines) - 1}).")
+        target = engines[index]
+        for part in self.parts:
+            if part.attached and target in part.engines:
+                part.engines.remove(target)
+                self._refresh_mass()
+                return target
+        raise ValueError("Engine not found.")
 
     def set_engine_state(self, index: int, active: bool) -> None:
         if 0 <= index < len(self.engines):
@@ -788,6 +1119,39 @@ class Spacecraft(Body):
         self.set_state(position, velocity, ut)
         return OperationResult(True)
 
+    def time_to_soi_exit(self, ut: float | None = None) -> float | None:
+        """UT when craft crosses the parent body's SOI boundary, or None if bound."""
+        t0 = self.t0 if ut is None else float(ut)
+        orb = self.orbit
+        parent = orb.parent
+        if parent is None:
+            return None
+        r_soi = parent.soi_radius()
+        if r_soi is None or r_soi <= 0.0:
+            return None
+        mu = parent.mu
+        e = orb.eccen
+        q = orb.periapsis
+        if e >= 1.0 - PARABOLIC_EPS and q is not None and q > 0.0 and np.isfinite(q):
+            D_exit = np.sqrt(r_soi / q - 1.0)
+            n_p = np.sqrt(mu / (2.0 * q ** 3))
+            M_p_exit = D_exit + D_exit ** 3 / 3.0
+            dt = (M_p_exit - orb.MA_at_t0) / n_p
+            return t0 + dt
+        if e > 1.0 + PARABOLIC_EPS:
+            a = orb.semi_major_axis
+            if a >= 0.0 or not np.isfinite(a):
+                return None
+            cosh_H = (r_soi / a + 1.0) / e
+            if cosh_H < 1.0:
+                return None
+            H = np.arccosh(cosh_H)
+            M_h = e * np.sinh(H) - H
+            n_h = np.sqrt(mu / (-a) ** 3)
+            dt = (M_h - orb.MA_at_t0) / n_h
+            return t0 + dt
+        return None
+
     def dock(self, other: Spacecraft, ut: float) -> OperationResult:
         if other is self:
             return OperationResult(False, "A vessel cannot dock with itself.")
@@ -804,22 +1168,6 @@ class Spacecraft(Body):
         other.docked_to.add(self)
         self.docked_to.add(other)
         return OperationResult(True)
-
-    def undock(self, part_ids: list[str], name: str, ut: float) -> OperationResult:
-        if not part_ids or "core" in part_ids:
-            return OperationResult(False, "Undocking requires one or more non-core parts.")
-        detached = [self._part(identifier) for identifier in part_ids]
-        for part in detached:
-            part.attached = False
-        self._refresh_mass()
-        position, velocity = self.state_at(ut)
-        spawned = Spacecraft(name, position - self.parent.get_absolute_pos_at_ut(ut), velocity - self.parent.get_absolute_vel_at_ut(ut), ut, self.parent, 0.0, 0.0, self.hull_mesh)
-        spawned.parts = copy.deepcopy(detached)
-        for part in spawned.parts:
-            part.attached = True
-        spawned._refresh_mass()
-        spawned._recalculate_orbit(spawned.r0, spawned.v0, ut)
-        return OperationResult(True, spawned_vessel=spawned, detached_parts=part_ids)
 
     def snapshot(self, ut: float) -> VesselSnapshot:
         position, velocity = self.state_at(ut)
@@ -909,12 +1257,49 @@ class Spacecraft(Body):
         self._recalculate_orbit(self.r0, self.v0, self.t0)
 
     def set_absolute_pos_at_ut(self, r: np.ndarray, ut: float) -> None:
-        self.r0, self.t0 = r.copy(), ut
+        parent_r = self.parent.get_absolute_pos_at_ut(ut)
+        self.r0, self.t0 = r - parent_r, ut
         self._recalculate_orbit(self.r0, self.v0, self.t0)
 
     def set_absolute_vel_at_ut(self, v: np.ndarray, ut: float) -> None:
-        self.v0, self.t0 = v.copy(), ut
+        parent_v = self.parent.get_absolute_vel_at_ut(ut)
+        self.v0, self.t0 = v - parent_v, ut
         self._recalculate_orbit(self.r0, self.v0, self.t0)
+
+    def undock(self, part_ids: list[str], name: str, ut: float) -> OperationResult:
+        if not part_ids or "core" in part_ids:
+            return OperationResult(False, "Undocking requires one or more non-core parts.")
+        
+        detached = [self._part(identifier) for identifier in part_ids]
+        for part in detached:
+            part.attached = False
+        self._refresh_mass()
+
+        pos_abs, vel_abs = self.state_at(ut)
+        parent_pos = self.parent.get_absolute_pos_at_ut(ut)
+        parent_vel = self.parent.get_absolute_vel_at_ut(ut)
+
+        # Compute initial mass specs from detached parts
+        d_dry = sum(p.dry_mass for p in detached)
+        d_wet = d_dry + sum(t.amount for p in detached for t in p.tanks if t.resource == "LiquidFuel")
+
+        spawned = Spacecraft(
+            name=name,
+            r0=pos_abs - parent_pos,
+            v0=vel_abs - parent_vel,
+            t0=ut,
+            parent=self.parent,
+            dry_mass=d_dry,
+            wet_mass=d_wet,
+            hull_mesh=self.hull_mesh,
+        )
+        spawned.parts = copy.deepcopy(detached)
+        for part in spawned.parts:
+            part.attached = True
+
+        spawned._refresh_mass()
+        spawned._recalculate_orbit(spawned.r0, spawned.v0, ut)
+        return OperationResult(True, spawned_vessel=spawned, detached_parts=part_ids)
 
     def _recalculate_orbit(self, r: np.ndarray, v: np.ndarray, ut: float) -> None:
         mu = self.parent.mu
@@ -989,8 +1374,10 @@ class Spacecraft(Body):
             else:
                 nu = np.arctan2(r[1], r[0])
 
+        q = h_mag ** 2 / (mu * (1.0 + e))
+
         # Mean anomaly at epoch
-        if e < 1.0 - 1e-10:
+        if e < 1.0 - PARABOLIC_EPS:
             # Elliptic
             E = 2.0 * np.arctan2(
                 np.sqrt(1.0 - e) * np.sin(nu / 2.0),
@@ -998,7 +1385,7 @@ class Spacecraft(Body):
             )
             ma0 = E - e * np.sin(E)
 
-        elif e > 1.0 + 1e-10:
+        elif e > 1.0 + PARABOLIC_EPS:
             # Hyperbolic
             H = 2.0 * np.arctanh(
                 np.sqrt((e - 1.0) / (e + 1.0)) * np.tan(nu / 2.0)
@@ -1006,15 +1393,17 @@ class Spacecraft(Body):
             ma0 = e * np.sinh(H) - H
 
         else:
-            # Near-parabolic
-            ma0 = 0.0
+            D = np.tan(nu / 2.0)
+            ma0 = D + D * D * D / 3.0
 
         # Store orbit
-        if np.isfinite(a):
+        if e < 1.0 - PARABOLIC_EPS or e > 1.0 + PARABOLIC_EPS:
             n = np.sqrt(mu / abs(a) ** 3)
-            ma_at_t0 = ma0 - n * ut
+        elif q > 0.0 and np.isfinite(q):
+            n = np.sqrt(mu / (2.0 * q ** 3))
         else:
-            ma_at_t0 = ma0
+            n = 0.0
+        ma_at_t0 = ma0 - n * ut
 
         self.orbit = Orbit(
             a=float(a),
@@ -1024,18 +1413,28 @@ class Spacecraft(Body):
             MA_at_t0=float(ma_at_t0),
             inclination=float(inc),
             parent=self.parent,
+            periapsis=float(q),
         )
 
 @dataclass
 class ManeuverNode:
-    ut: float                  
-    delta_v_vector: np.ndarray 
-    prograde: np.ndarray       
-    normal: np.ndarray         
-    radial: np.ndarray         
-    total_mag: float           
+    """A planned instantaneous burn at time ``ut`` (seconds).
+
+    ``delta_v_vector`` is the raw delta-v (m/s); ``prograde``/``normal``/``radial``
+    are its components resolved into the local orbital frame at the burn, and
+    ``total_mag`` is the burn magnitude in m/s.
+    """
+
+    ut: float
+    delta_v_vector: np.ndarray
+    prograde: np.ndarray
+    normal: np.ndarray
+    radial: np.ndarray
+    total_mag: float
 
 class ManeuverPlanner:
+    """Builds a :class:`ManeuverNode` from current and required velocities."""
+
     def calculate_maneuver(self, ut: float, v_curr: np.ndarray, v_req: np.ndarray, r_curr: np.ndarray) -> ManeuverNode:
         dv_vect = v_req - v_curr
         total_mag = float(np.linalg.norm(dv_vect))
