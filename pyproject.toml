@@ -3,14 +3,14 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "kerbalgravityprog"
-version = "0.1.0"
-description = "Mission planner for Kerbal Space Program — model orbits, transfers, and maneuvers from outside the game."
+name = "kgrp"
+dynamic = ["version"]
+description = "Mission planner for Kerbal Space Program - model orbits, transfers, and maneuvers from outside the game."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
-authors = [{ name = "kaart" }]
+authors = [{ name = "Gautham Kaarthik" }]
 keywords = [
     "kerbal",
     "ksp",
@@ -53,7 +53,7 @@ render = [
 kgrp = "CLI_use.CLI:main"
 
 # The single source of truth for the version is ``__version__`` in
-# ``src/basic_systems/__init__.py`` — both the program and users can do
+# ``src/basic_systems/__init__.py`` - both the program and users can do
 # ``import basic_systems; basic_systems.__version__``.
 [tool.hatch.version]
 source = "code"
