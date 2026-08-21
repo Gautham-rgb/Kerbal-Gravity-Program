@@ -1916,7 +1916,7 @@ def main():
     parser.add_argument(
         "--version", "-V",
         action="version",
-        version=f"kerbalgravityprog {__version__}",
+        version=f"kgrp {__version__}",
     )
     parser.add_argument(
         "--system", "-s",
