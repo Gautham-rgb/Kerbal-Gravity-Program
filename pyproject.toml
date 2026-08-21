@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
-authors = [{ name = "Gautham Kaarthik" }]
+authors = [{ name = "Gautham Kaarthik" , email = "gautitheexplorer@gmail.com"}]
 keywords = [
     "kerbal",
     "ksp",
