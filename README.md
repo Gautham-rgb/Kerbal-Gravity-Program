@@ -224,5 +224,5 @@ KGRP plans the mission. Flying it is still gloriously your problem.
 
 ## License
 
-MIT — see the `LICENSE` file. Go forth and transfer.
+GNU GPLv3 — see the `LICENSE` file. Go forth and transfer.
 
