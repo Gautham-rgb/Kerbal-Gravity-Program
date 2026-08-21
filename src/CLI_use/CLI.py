@@ -97,7 +97,8 @@ class REPL:
             "go_i": self.go_interplanetary_cmd,
             "preset": self.preset_cmd,
             "cursor": self.cursor,
-            "version": self.version
+            "version": self.version,
+            "feedback": self.feedback_cmd
         }
 
         self.command_help = {
@@ -125,7 +126,8 @@ class REPL:
             "go": "go [<start-orbit> <end-orbit> [key=value ...]] - plan a transfer; add -i/--interplanetary <target> for a direct interplanetary A->B (target: body name like 'duna' or 'moon:<id>'; overrides: peri_alt, apo_alt, incl, arg_p, lan)",
             "go_i": "go_i <target> - alias for 'go -i <target>' (direct interplanetary transfer: escape + SOI exit + heliocentric leg; target: body name like 'duna' or 'moon:<id>')",
             "preset": "preset <list|new|edit|delete|save|load> - manage editable orbit presets",
-            "cursor": "cursor <seconds>- give the current ut in human readable units or in seconds"
+            "cursor": "cursor <seconds>- give the current ut in human readable units or in seconds",
+            "feedback": "feedback [-y|--yes] <message> - send feedback as a public GitHub issue (includes kgrp version + OS; -y to actually submit)"
         }
 
         self.subcommand_help = {
@@ -185,6 +187,11 @@ class REPL:
             "exit": "exit  - leave the REPL",
             "quit": "quit  - leave the REPL",
             "help": "help [command]  - show help for a command (or all commands)",
+            "feedback": "feedback [-y|--yes] <message>\n"
+                        "  Opens a PUBLIC GitHub issue in Gautham-rgb/Kerbal-Gravity-Program.\n"
+                        "  Collected: your message, kgrp version, and OS info.\n"
+                        "  Without -y/--yes it only prints a preview and the submission URL.\n"
+                        "  Example: feedback -y the interplanetary planner crashed on go_i duna",
         }
 
         self.style = Style.from_dict({
@@ -1175,6 +1182,85 @@ class REPL:
             print("Uncle Roger will delete you like a Jamie Oliver video. Chilli jam")
             print("does NOT belong in fried rice, and deleting KGRP is a sin like that")
             print("Don't be a stupid, weak-sauce chilli jam bastard.")
+
+    async def feedback_cmd(self, args):
+        send = False
+        rest = []
+        for tok in args:
+            if tok in ("-y", "--yes"):
+                send = True
+            else:
+                rest.append(tok)
+        message = " ".join(rest).strip()
+        if not message:
+            print("Usage: feedback [-y|--yes] <your message>")
+            print("  Sends feedback as a PUBLIC GitHub issue to the developer.")
+            print("  Add -y/--yes to actually submit (otherwise a preview is shown).")
+            print("  Collected: your message, kgrp version, and OS info.")
+            return
+
+        import platform, shutil, subprocess, webbrowser, urllib.parse
+
+        version = __version__
+        sys_info = (
+            f"OS:      {platform.system()} {platform.release()} ({platform.machine()})\n"
+            f"Python:  {platform.python_version()}\n"
+            f"kgrp:    {version}"
+        )
+        body = (
+            f"**Message**\n\n{message}\n\n"
+            f"**Environment**\n\n```\n{sys_info}\n```\n\n"
+            f"_Submitted via the `kgrp feedback` command._"
+        )
+        title = f"Feedback: {message[:60]}{'...' if len(message) > 60 else ''}"
+        repo = "Gautham-rgb/Kerbal-Gravity-Program"
+
+        print()
+        print(f"This creates a PUBLIC GitHub issue in {repo} with:")
+        print("  - your message")
+        print(f"  - kgrp version: {version}")
+        print(f"  - OS: {platform.system()} {platform.release()} ({platform.machine()})")
+        print()
+        print("Title:\n  " + title)
+        print("Body:\n  " + body.replace("\n", "\n  "))
+        print()
+
+        if not send:
+            print("Preview only. Re-run with -y/--yes to submit:")
+            if shutil.which("gh"):
+                print(f'  gh issue create --repo {repo} --title "{title}" --body "<message>"')
+            print(f"  https://github.com/{repo}/issues/new?"
+                  f"title={urllib.parse.quote(title)}&body={urllib.parse.quote(body)}")
+            return
+
+        if shutil.which("gh"):
+            try:
+                result = subprocess.run(
+                    ["gh", "issue", "create", "--repo", repo,
+                     "--title", title, "--body", body],
+                    capture_output=True, text=True, timeout=30,
+                )
+                if result.returncode == 0:
+                    print("[OK] Feedback submitted. Issue created at:")
+                    print(result.stdout.strip())
+                    return
+                print(f"[warn] `gh` returned an error:\n{result.stderr.strip() or result.stdout.strip()}")
+            except subprocess.TimeoutExpired:
+                print("[warn] `gh` timed out (possibly waiting for auth). Falling back to browser.")
+            except Exception as e:
+                print(f"[warn] Could not run `gh`: {e}")
+        else:
+            print("[info] `gh` CLI not found; opening GitHub in your browser instead.")
+
+        url = (f"https://github.com/{repo}/issues/new?title="
+               f"{urllib.parse.quote(title)}&body={urllib.parse.quote(body)}")
+        print("\nOpening GitHub so you can submit the issue manually:")
+        print(url)
+        try:
+            webbrowser.open(url)
+            print("[OK] Browser opened. Review and click 'Submit new issue'.")
+        except Exception:
+            print("[info] Could not open a browser automatically; copy the URL above.")
 
     async def edit(self, args):
         if self.system is None:
