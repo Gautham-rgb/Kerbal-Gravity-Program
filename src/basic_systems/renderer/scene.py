@@ -133,7 +133,34 @@ class SceneBuilder:
 
             if body.orbit and body.orbit.period > 0 and np.isfinite(body.orbit.period):
                 times = np.linspace(0, body.orbit.period, self.r.num_line_segments)
-                path_pts = np.array([self.r.updater._get_display_pos_at_ut(body, t) for t in times], dtype=np.float32)
+                parent = body.orbit.parent
+                if parent is not None and parent != self.r.system.root:
+                    # A moon's absolute trajectory over one period is a cycloid
+                    # (the parent moves ~as far as the moon's own orbit during
+                    # that window). Draw the orbit in the *parent's local frame*
+                    # and attach the actor to the parent so it follows the parent
+                    # around — giving a clean circle that tracks the planet.
+                    factor = self.r.moon_exaggeration
+                    rel_pts = (
+                        np.array(
+                            [np.array(body.get_pos_at_ut(t), dtype=np.float32) * factor for t in times],
+                            dtype=np.float32,
+                        )
+                        * self.r.distance_scale
+                    )
+                    line_poly = pv.lines_from_points(rel_pts, close=True)
+                    orbit_actor = self.r.plotter.add_mesh(
+                        line_poly, color=body.render_color, opacity=0.58, line_width=1.6, pickable=False
+                    )
+                    parent_disp = self.r.updater._get_display_pos_at_ut(parent, self.r.curr_ut)
+                    orbit_actor.position = (parent_disp * self.r.distance_scale).tolist()
+                    self.r.moon_orbit_links.append((orbit_actor, parent))
+                    continue
+                else:
+                    path_pts = np.array(
+                        [self.r.updater._get_display_pos_at_ut(body, t) for t in times],
+                        dtype=np.float32,
+                    )
                 path_pts *= self.r.distance_scale
 
                 line_poly = pv.lines_from_points(path_pts, close=True)
@@ -194,7 +221,26 @@ class SceneBuilder:
 
         burn_intervals = self._collect_burn_intervals(spacecraft)
         times = np.linspace(self.r.curr_ut, self.r.curr_ut + period, max(80, self.r.num_line_segments))
-        points = np.array([spacecraft.get_absolute_pos_at_ut(time) for time in times]) * self.r.distance_scale
+        ref = getattr(spacecraft, "parent", None)
+        if (
+            ref is not None
+            and getattr(ref, "orbit", None) is not None
+            and ref.orbit.parent is not None
+            and ref.orbit.parent != self.r.system.root
+        ):
+            # Match the spacecraft's (exaggerated) display offset so the path
+            # hugs the drawn moon instead of the moon's true position.
+            pts = []
+            for time in times:
+                abs_p = np.array(spacecraft.get_absolute_pos_at_ut(time), dtype=np.float32)
+                ref_disp = self.r.updater._get_display_pos_at_ut(ref, time)
+                ref_true = np.array(ref.get_absolute_pos_at_ut(time), dtype=np.float32)
+                pts.append(ref_disp + (abs_p - ref_true) * self.r.moon_exaggeration)
+            points = np.array(pts, dtype=np.float32) * self.r.distance_scale
+        else:
+            points = np.array(
+                [spacecraft.get_absolute_pos_at_ut(time) for time in times], dtype=np.float32
+            ) * self.r.distance_scale
 
         def in_burn(t: float) -> bool:
             return any(s <= t <= e for s, e in burn_intervals)

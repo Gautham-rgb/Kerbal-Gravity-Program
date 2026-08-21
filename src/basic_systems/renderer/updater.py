@@ -44,16 +44,43 @@ class SceneUpdater:
             
             for sc in self.r.spacecraft_list:
                 if sc in self.r.body_actors:
-                    pos = sc.get_absolute_pos_at_ut(self.r.curr_ut)
+                    pos = self.spacecraft_display_pos(sc, self.r.curr_ut, cache)
                     world_pos = pos * self.r.distance_scale
                     self.r.body_actors[sc].position = world_pos.tolist()
                     self.r.plotter.renderer.SetWorldPoint(world_pos[0], world_pos[1], world_pos[2], 1.0)
                     self.r.plotter.renderer.WorldToDisplay()
                     display_point = self.r.plotter.renderer.GetDisplayPoint()
                     self.r.body_labels[sc].SetPosition(int(display_point[0]), int(display_point[1]))
-    
-        
-    
+
+            # Moon orbit guides are drawn in their parent's local frame, so they
+            # must be re-anchored to the parent's (moving) display position.
+            scale = self.r.distance_scale
+            for actor, parent in self.r.moon_orbit_links:
+                parent_disp = self._get_display_pos_at_ut(parent, self.r.curr_ut, cache)
+                actor.position = (parent_disp * scale).tolist()
+
+    def spacecraft_display_pos(self, sc, ut, cache=None) -> np.ndarray:
+        """Display position for a spacecraft, consistent with the (possibly
+        exaggerated) body positions.
+
+        A craft orbiting an exaggerated moon is offset from that moon by the
+        same factor, otherwise it would render detached from the moon it flies
+        around.
+        """
+        sc_abs = np.array(sc.get_absolute_pos_at_ut(ut), dtype=float)
+        ref = getattr(sc, "parent", None)
+        if (
+            ref is not None
+            and getattr(ref, "orbit", None) is not None
+            and ref.orbit.parent is not None
+            and ref.orbit.parent != self.r.system.root
+        ):
+            ref_disp = self._get_display_pos_at_ut(ref, ut, cache)
+            ref_true = np.array(ref.get_absolute_pos_at_ut(ut), dtype=float)
+            return ref_disp + (sc_abs - ref_true) * self.r.moon_exaggeration
+        return sc_abs
+
+
     def _get_display_pos_at_ut(self, body: Body, ut: float, _cache: dict | None = None) -> np.ndarray:
         if _cache is None:
             _cache = {}

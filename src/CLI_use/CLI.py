@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 
+from basic_systems import __version__
 from basic_systems.builder import System
 from basic_systems.orbit_pred import Body, Spacecraft, Orbit, format_ut, parse_time_string
 from CLI_use.commands import ArgSpec, TICKET_COMMANDS
@@ -95,7 +96,8 @@ class REPL:
             "go": self.go_cmd,
             "go_i": self.go_interplanetary_cmd,
             "preset": self.preset_cmd,
-            "cursor": self.cursor
+            "cursor": self.cursor,
+            "version": self.version
         }
 
         self.command_help = {
@@ -120,8 +122,8 @@ class REPL:
             "vessel": "vessel <list|create|delete|engine> - manage vessels",
             "render": "render - open 3D renderer window",
             "time": "time <ut|duration> - scrub the timeline to UT (e.g. 'time 1y 2mo 3d 4h 5m 6s')",
-            "go": "go [<start-orbit> <end-orbit> [key=value ...]] - plan a transfer; add -i/--interplanetary <target> for a direct interplanetary A->B (overrides: peri_alt, apo_alt, incl, arg_p, lan)",
-            "go_i": "go_i <target> - alias for 'go -i <target>' (direct interplanetary transfer: escape + SOI exit + heliocentric leg)",
+            "go": "go [<start-orbit> <end-orbit> [key=value ...]] - plan a transfer; add -i/--interplanetary <target> for a direct interplanetary A->B (target: body name like 'duna' or 'moon:<id>'; overrides: peri_alt, apo_alt, incl, arg_p, lan)",
+            "go_i": "go_i <target> - alias for 'go -i <target>' (direct interplanetary transfer: escape + SOI exit + heliocentric leg; target: body name like 'duna' or 'moon:<id>')",
             "preset": "preset <list|new|edit|delete|save|load> - manage editable orbit presets",
             "cursor": "cursor <seconds>- give the current ut in human readable units or in seconds"
         }
@@ -151,7 +153,8 @@ class REPL:
                   "  Example: go current preset:molniya incl=30\n"
                   "  Interplanetary: go -i <target>  (alias go_i <target>)\n"
                   "    Direct A->B transfer: escape burn + coast to SOI exit + heliocentric leg.\n"
-                  "    Example: go -i moon:3   |   go -i moon:4 peri_alt=200000",
+                  "    target is a body name (e.g. 'duna') or moon:<id> (e.g. 'moon:4').\n"
+                  "    Example: go -i duna   |   go -i moon:4 peri_alt=200000",
             "preset": "preset <list|new|edit|delete|save|load> [args]\n"
                       "  list                - show all presets\n"
                       "  new                 - create a preset\n"
@@ -622,7 +625,8 @@ class REPL:
         """
         if not args:
             print("Usage: go -i <target> [key=value ...]   (alias: go_i <target>)")
-            print("  e.g. go -i moon:3           (escape Kerbin, transfer to Kerbin's orbit)")
+            print("  <target> is a body name (e.g. 'duna') or moon:<id> (e.g. 'moon:4').")
+            print("  e.g. go -i duna                (Kerbin -> Duna, escape + heliocentric leg)")
             print("  e.g. go -i moon:4 peri_alt=200000")
             print("  Direct A->B transfer (escape burn + coast to SOI exit + heliocentric leg).")
             return
@@ -643,7 +647,7 @@ class REPL:
         target_key = positional[0]
 
         try:
-            plan = go_plan_interplanetary(self.ticket, target_key, overrides=overrides or None)
+            plan = go_plan_interplanetary(self.ticket, target_key, overrides=overrides or None) #type: ignore
         except (ValueError, RuntimeError) as e:
             print(f"[Failed] {e}")
             return
@@ -667,7 +671,7 @@ class REPL:
 
         try:
             apply_go_interplanetary(
-                self.ticket, target_key, mode=mode, overrides=overrides or None, plan=plan
+                self.ticket, target_key, mode=mode, overrides=overrides or None, plan=plan #type: ignore
             )
         except (ValueError, RuntimeError) as e:
             print(f"[Failed] {e}")
@@ -1158,6 +1162,20 @@ class REPL:
         else:
             print(f"Invalid argument: {target}")
 
+    async def version(self, args):
+        if len(args) == 0:
+            print(f"v{__version__} of KGRP (Kerbal GRavity Program)")
+            return
+        elif len(args) == 1 and args[0] == "-c" or "--credits":
+            print(f"v{__version__} of KGRP (Kerbal GRavity Program)")
+            print("Made by Gautham_rgb (systemic_speed on PyPi)")
+            print("LICENSE: GNU GPLv3")
+            print("Repository link: https://github.com/Gautham-rgb/Kerbal-Gravity-Program")
+            print("Thank you for installing! If you delete this app, I swear")
+            print("Uncle Roger will delete you like a Jamie Oliver video. Chilli jam")
+            print("does NOT belong in fried rice, and deleting KGRP is a sin like that")
+            print("Don't be a stupid, weak-sauce chilli jam bastard.")
+
     async def edit(self, args):
         if self.system is None:
             print("Load or create a system first.")
@@ -1196,7 +1214,7 @@ class REPL:
         elif field in ("a", "e", "inc", "arg_p", "lon_of_asc", "MA_at_t0"):
             orbit = getattr(body, "orbit", None)
             if orbit is None:
-                print(f"Body '{body.name}' has no orbit.")
+                print(f"Body '{body.name}' has no orbit.") #type: ignore
                 return
             mapping = {"a": "semi_major_axis", "inc": "inclination"}
             setattr(orbit, mapping.get(field, field), value)
@@ -1206,7 +1224,7 @@ class REPL:
 
         if not self._validate_and_report(self.system):
             print("Note: the system now fails validation.")
-        print(f"[Edited] {body.name}.{field} = {value:g}")
+        print(f"[Edited] {body.name}.{field} = {value:g}") #type: ignore
 
     def _edit_vessel(self, vessel: Spacecraft, field: str, raw: str) -> None:
         field = field.lower()
@@ -1218,7 +1236,7 @@ class REPL:
             is_number = False
 
         if field == "wet_mass" and is_number:
-            new_fuel = value - vessel.dry_mass
+            new_fuel = value - vessel.dry_mass #type: ignore
             if new_fuel < 0:
                 print(f"[Failed] wet_mass ({value:g}kg) below dry_mass ({vessel.dry_mass:g}kg).")
                 return
@@ -1234,7 +1252,7 @@ class REPL:
         if field == "dry_mass" and is_number:
             core = vessel._part("core")
             other_dry = vessel.dry_mass - core.dry_mass
-            core.dry_mass = value - other_dry
+            core.dry_mass = value - other_dry #type: ignore
             if core.dry_mass < 0:
                 print(f"[Failed] dry_mass ({value:g}kg) below the vessel's other parts ({other_dry:g}kg).")
                 return
@@ -1247,18 +1265,18 @@ class REPL:
             for part in vessel.parts:
                 for tank in part.tanks:
                     if tank.resource == "LiquidFuel":
-                        tank.amount = min(tank.capacity, max(target, 0.0))
-                        target -= tank.amount
+                        tank.amount = min(tank.capacity, max(target, 0.0)) #type: ignore
+                        target -= tank.amount #type: ignore
             vessel._refresh_mass()
             self._sync_ticket_snapshot(vessel)
             print(f"[Edited] {vessel.name}.fuel = {vessel.fuel_mass:g}kg")
             return
         if field == "t0" and is_number:
-            if value < 0:
+            if float(value) < 0:
                 print("[Failed] t0 cannot be negative.")
                 return
-            vessel.t0 = value
-            vessel._recalculate_orbit(vessel.r0, vessel.v0, value)
+            vessel.t0 = value  #type: ignore
+            vessel._recalculate_orbit(vessel.r0, vessel.v0, value)  #type: ignore
             self._sync_ticket_snapshot(vessel)
             print(f"[Edited] {vessel.name}.t0 = {value:g}s")
             return
@@ -1490,7 +1508,7 @@ class REPL:
 
     def _print_welcome(self) -> None:
         _CONSOLE.print(Panel(
-            "[bold cyan]Kerbal Gravity Program[/bold cyan]  [dim](v0.1.0 — mission planner for KSP)[/dim]\n\n"
+            f"[bold cyan]Kerbal Gravity Program[/bold cyan]  [dim](v{__version__} — mission planner for KSP)[/dim]\n\n"
             + _QUICKSTART,
             border_style="cyan",
         ))
@@ -1880,7 +1898,7 @@ class REPL:
             tickets=tickets,
             use_kerbal_time=self.renderer_prefs.get("use_kerbal_time", True),
             show_units_km=self.renderer_prefs.get("show_units_km", True),
-            moon_exaggeration=self.renderer_prefs.get("moon_exaggeration", 100),
+            moon_exaggeration=self.renderer_prefs.get("moon_exaggeration", 10),
         )
 
         print(f"Launching renderer at UT {renderer.curr_ut:.0f} ...")

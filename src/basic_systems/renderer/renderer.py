@@ -28,7 +28,7 @@ class SystemRenderer:
         use_kerbal_time: bool = True,
         show_units_km: bool = True,
         event_marker_color: str = "#ffae46",
-        moon_exaggeration: int = 100,
+        moon_exaggeration: int = 10,
     ):
         self.system = system
         self.title = title
@@ -81,6 +81,7 @@ class SystemRenderer:
         self.tickets = tickets if tickets is not None else []
 
         self.orbit_actors: list[pv.Actor] = []
+        self.moon_orbit_links: list[tuple[pv.Actor, Body]] = []
         self.atmosphere_actors: dict[Any, pv.Actor] = {}
         self.maneuver_actors: list[pv.Actor] = []
         self.maneuver_node_actors: dict[Any, dict] = {}
@@ -378,14 +379,9 @@ class SystemRenderer:
         self.plotter.render()
 
 if __name__ == "__main__":
-    from pathlib import Path
+    from basic_systems import example_system_path
 
-    planets_path = (
-        Path(__file__).resolve().parent.parent.parent
-        / "planets_ksp.json"
-    )
-
-    system = System.load(str(planets_path))
+    system = System.load(example_system_path("planets_ksp"))
 
     renderer = SystemRenderer(
         system=system,

@@ -344,7 +344,7 @@ def go_plan_interplanetary(
     if target_preset is None:
         raise ValueError(
             f"Unknown target '{target_key}' in {grandparent.name}'s frame. "
-            f"Use moon:<identifier> for moons (e.g. moon:3 for Kerbin). "
+            f"Use a body name (e.g. 'duna') or moon:<id> (e.g. moon:4). "
             f"The deep-space navigation charts don't list '{target_key}'."
         )
 

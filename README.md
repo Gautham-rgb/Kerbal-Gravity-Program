@@ -52,32 +52,28 @@ You should see the KGRP prompt (`krgp >`). Type `help` and press Enter.
 
 ---
 
-## Quick start: your first mission
+## Quickstart
 
-KGRP is a REPL. Everything below is typed at the `krgp >` prompt.
+KGRP is a REPL. The whole loop is five commands, typed at the `krgp >`
+prompt (launch with `kgrp`):
 
 ```text
-# 1. Load the stock KSP system (or `new system` to build your own)
-load system planets_ksp.json
-
-# 2. Create a spacecraft + its first ticket (a wizard walks you through it)
-new ticket
-
-# 3. Plan a transfer to the Mun with the `go` wizard
-go
-
-# 4. KGRP shows the plan, then asks how to apply it.
-#    Choose "gradual" to schedule the burns, then run the timeline:
-advance <end-ut shown by go>
-
-# 5. Watch it happen
-render
+load system planets_ksp.json   # or: new system  (build your own)
+new ticket                     # wizard creates a vessel + first ticket
+go                             # pick two orbits; KGRP plans the burns
+advance <end-ut>               # run the timeline (UT is printed by go)
+render                         # optional 3D view
 ```
 
-That is the whole loop: **load a system -> new ticket -> plan with `go` ->
-`advance` the timeline -> `render`**.
+`help` lists every command; `help <command>` (e.g. `help go`) explains one.
+That is it: **load a system -> new ticket -> plan with `go` -> `advance` the
+timeline -> `render`**.
 
-### A concrete example
+---
+
+## Workflow example
+
+### 1. A local transfer (Kerbin -> Mun)
 
 ```text
 krgp > load system planets_ksp.json
@@ -85,15 +81,57 @@ krgp > new ticket
 # ... answer the wizard prompts (name, body = Kerbin, defaults are fine) ...
 krgp > go current moon:3a
 Transfer plan:
-  Current (700,000m circular, 0.0 deg)  ->  Mun orbit (11,400,000m circular, ...)  (about Kerbin)
-  Burns: 2   Total delta-v: 1,112.7 m/s   Duration: 27,130.1s
-    burn   @ 0.0s  dv=764.2 m/s  Raise apoapsis to transfer
-    coast  0.0s -> 27,130.1s  Coast to apoapsis
-    burn   @ 27,130.1s  dv=348.5 m/s  Circularize / match target
-krgp > advance 27130
+  Current (~800,000m circular, 0.0 deg)  ->  Mun orbit (12,000,000m circular)  (about Kerbin)
+  Burns: 2   Total delta-v: 1,126.6 m/s   Duration: 27,066.6s
+    burn   @ 0.0s  dv=775.9 m/s  Raise apoapsis to transfer
+    coast  0.0s -> 27,066.6s  Coast to apoapsis
+    burn   @ 27,066.6s  dv=350.7 m/s  Circularize / match target
+krgp > advance 27067
 # vessel is now on the transfer; advance further to reach the Mun
 krgp > render
 ```
+
+`go` takes `<start-orbit> <end-orbit>` plus optional `key=value` overrides
+(`peri_alt=`, `apo_alt=`, `incl=`, `arg_p=`, `lan=`). Or run `go` with no
+arguments to pick both orbits from a menu.
+
+### 2. An interplanetary transfer (Kerbin -> Duna)
+
+Use `go -i <target>` (alias `go_i <target>`). It plans the escape burn, the
+heliocentric leg, and the arrival burn in one shot:
+
+```text
+krgp > go_i duna
+Interplanetary transfer plan (Kerbin -> Duna):
+  Escape from Kerbin -> SOI exit -> Kerbol frame
+  Total delta-v: 2,583.5 m/s   Burns: 3
+    [Kerbin] escape burn  dv=870.3 m/s
+    coast to SOI exit @ 196,411s
+    refbody -> Kerbol
+    burn   @ 1,994,868.8s  dv=946.1 m/s  Raise apoapsis to transfer
+    coast  1,994,868.8s -> 8,719,637.1s
+    burn   @ 8,719,637.1s  dv=767.2 m/s  Circularize / match target
+krgp > advance 8719637    # or 'advance 8.7M' if your fingers object
+krgp > render
+```
+
+Override the arrival orbit with the same `key=value` overrides, e.g.
+`go_i duna peri_alt=200000 apo_alt=200000`. `go -i` / `go_i` work from any body
+that orbits a star (stock or OPM).
+
+### 3. Save the mission and come back
+
+```text
+krgp > save mission duna_trip.json
+krgp > exit
+# later:
+kgrp
+krgp > load mission duna_trip.json
+```
+
+`save mission` writes one file with the system, ticket, and vessels; `load
+mission` brings it all back. You can also `save system` / `load system` and
+`save ticket` / `load ticket` separately.
 
 ---
 
@@ -159,6 +197,7 @@ Valid time units: `y` (year), `mo` (month), `d` (day), `h` (hour), `m`
 - `CLI_use/` — the REPL, command parsing, completion, and the `go` planner.
 - `basic_systems/` — physics: bodies, orbits, integrators, and the renderer.
 - `planets_ksp.json` / `planets_ksp_opm.json` — stock and OPM system data.
+- `planets.json` - Actual Solar System data
 - `tests/` — pytest suite (`python -m pytest`).
 
 ## Running the tests
@@ -167,6 +206,23 @@ Valid time units: `y` (year), `mo` (month), `d` (day), `h` (hour), `m`
 python -m pytest
 ```
 
+---
+
+## Credits
+
+Built by kaart, powered by an unreasonable amount of Kerbal optimism.
+
+- **Jebediah Kerman** — chief test pilot. Assumes every plan works until
+  physically proven otherwise (and sometimes after).
+- **Bill & Bob** — held the ladder. Reviewed nothing.
+- **The math** — probably fine. Mostly. We checked it, like, twice.
+- **The deep-space navigation charts** — still don't list your spelling
+  mistakes, but they do list Duna now.
+- **You** — for reading this far instead of just launching and hoping.
+
+KGRP plans the mission. Flying it is still gloriously your problem.
+
 ## License
 
-Pre-release; see the repository for license terms.
+MIT — see the `LICENSE` file. Go forth and transfer.
+

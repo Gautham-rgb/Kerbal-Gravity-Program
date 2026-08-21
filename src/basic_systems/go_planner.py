@@ -262,7 +262,7 @@ def orbit_presets(body: Body, spacecraft: Spacecraft, library: PresetLibrary) ->
             continue
         key = f"moon:{moon.identifier}"
         entry(
-            key, f"Moon: {moon.name}", f"Match {moon.name}'s orbit around {body.name}",
+            key, moon.name, f"Match {moon.name}'s orbit around {body.name}",
             lambda b, sc, moon=moon, orbit=orbit: _spec_from_orbit(f"{moon.name} orbit", orbit),
         )
 

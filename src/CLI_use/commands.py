@@ -18,6 +18,7 @@ from typing import Any, Callable
 import numpy as np
 
 from basic_systems.orbit_pred import ManeuverPlanner
+from basic_systems.builder import System
 from CLI_use.ticket import (
     AttitudeEvent,
     CheckpointEvent,
@@ -114,7 +115,7 @@ def _propagate(ticket: Ticket, start=0.0, end=0.0, **_):
 
 
 def _rkf45(ticket: Ticket, start=0.0, end=0.0, tol=1e-6, **_):
-    return RKF45Event(_f(start), _f(end), _f(tol))
+    return RKF45Event(start_ut=_f(start), end_ut=_f(end), tolerance=_f(tol), system=ticket.system)
 
 
 _MANEUVER_PLANNER = ManeuverPlanner()

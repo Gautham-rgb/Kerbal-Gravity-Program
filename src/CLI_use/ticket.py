@@ -341,11 +341,12 @@ class RKF45Event(TicketEvent):
 
     type = "rkf45"
 
-    def __init__(self, start_ut: float, end_ut: float, tolerance: float = 1e-6):
+    def __init__(self, start_ut: float, end_ut: float, system: System, tolerance: float = 1e-6,):
         super().__init__(start_ut, end_ut)
         self.tolerance = tolerance
         self.last_ut = start_ut
         self.integrator: RKF45 | None = None
+        self.mission_system = system
 
     def reset(self) -> None:
         super().reset()
@@ -357,7 +358,7 @@ class RKF45Event(TicketEvent):
         if target <= self.last_ut:
             return
         if self.integrator is None:
-            system = getattr(spacecraft, "mission_system", None)
+            system = self.mission_system
             gravity = lambda pos, root_mu, now: RKF45.n_body_grav_system(pos, root_mu, now, system)
             self.integrator = RKF45(spacecraft, gravity, self.tolerance, system)
         self.integrator.propagate(target - self.last_ut, 1.0, self.last_ut)
@@ -874,7 +875,6 @@ class Ticket:
         self.spacecraft = spacecraft
         self.system = system
         self.mission_system = system
-        spacecraft.mission_system = system
         self.mesh_key = mesh_key
         self.events: list[TicketEvent] = []
         self.cursor_ut = spacecraft.t0
