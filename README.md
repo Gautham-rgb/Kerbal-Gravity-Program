@@ -210,7 +210,7 @@ python -m pytest
 
 ## Credits
 
-Built by kaart, powered by an unreasonable amount of Kerbal optimism.
+Built by Gautham, powered by an unreasonable amount of Kerbal optimism.
 
 - **Jebediah Kerman** — chief test pilot. Assumes every plan works until
   physically proven otherwise (and sometimes after).
