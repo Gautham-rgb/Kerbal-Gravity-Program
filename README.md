@@ -13,6 +13,20 @@ arbitrary spacecraft and solar systems (KSP stock, OPM, or your own).
 
 ---
 
+## Demo
+
+Watch KGRP plan and fly a mission right in the terminal:
+
+[![asciicast](https://asciinema.org/a/fBPRPZsKrolGCy2I.svg)](https://asciinema.org/a/fBPRPZsKrolGCy2I)
+
+On sites that allow raw HTML, embed the player directly:
+
+```html
+<script id="asciinema-player-fBPRPZsKrolGCy2I" src="https://asciinema.org/a/fBPRPZsKrolGCy2I.js" async></script>
+```
+
+---
+
 ## Features
 
 - **Round-trip mission planner** — define a vessel, schedule a timeline of
