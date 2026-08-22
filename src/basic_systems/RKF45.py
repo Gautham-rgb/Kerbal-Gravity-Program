@@ -1,3 +1,4 @@
+from __future__ import annotations
 from basic_systems.orbit_pred import Spacecraft, ManeuverNode
 import numpy as np
 from collections.abc import Callable
