@@ -108,6 +108,21 @@ class SceneBuilder:
             mesh = pv.Sphere(radius=scaled_radius, theta_resolution=48, phi_resolution=48)
             if body == self.r.system.root:
                 actor = self.r.plotter.add_mesh(mesh, color=body.render_color, smooth_shading=True, lighting=False)
+                # NASA-Eyes style: a glowing star that also illuminates the system.
+                try:
+                    glow = pv.Sphere(radius=scaled_radius * 1.7, theta_resolution=32, phi_resolution=32)
+                    self.r.plotter.add_mesh(
+                        glow, color=body.render_color, opacity=0.16, lighting=False, pickable=False
+                    )
+                    light = pv.Light(
+                        position=(0.0, 0.0, 0.0),
+                        focal_point=(1.0, 0.0, 0.0),
+                        intensity=1.2,
+                        positional=False,
+                    )
+                    self.r.plotter.add_light(light)
+                except Exception:
+                    pass
             else:
                 actor = self.r.plotter.add_mesh(
                     mesh, color=body.render_color, smooth_shading=True, specular=0.25, specular_power=18
@@ -149,6 +164,10 @@ class SceneBuilder:
                         * self.r.distance_scale
                     )
                     line_poly = pv.lines_from_points(rel_pts, close=True)
+                    # Glow pass (wide, faint) under a bright thin line.
+                    self.r.plotter.add_mesh(
+                        line_poly, color=body.render_color, opacity=0.12, line_width=5.0, pickable=False
+                    )
                     orbit_actor = self.r.plotter.add_mesh(
                         line_poly, color=body.render_color, opacity=0.58, line_width=1.6, pickable=False
                     )
@@ -164,6 +183,10 @@ class SceneBuilder:
                 path_pts *= self.r.distance_scale
 
                 line_poly = pv.lines_from_points(path_pts, close=True)
+                # Glow pass (wide, faint) under a bright thin line.
+                self.r.plotter.add_mesh(
+                    line_poly, color=body.render_color, opacity=0.12, line_width=5.0, pickable=False
+                )
                 orbit_actor = self.r.plotter.add_mesh(
                     line_poly, color=body.render_color, opacity=0.58, line_width=1.6, pickable=False
                 )
@@ -190,11 +213,12 @@ class SceneBuilder:
     def _add_starfield(self) -> None:
         """A deterministic sparse star field gives the scene depth without affecting scale."""
         rng = np.random.default_rng(73)
-        directions = rng.normal(size=(700, 3))
+        count = 1400
+        directions = rng.normal(size=(count, 3))
         directions /= np.linalg.norm(directions, axis=1)[:, None]
-        points = directions * rng.uniform(1300, 1900, size=(700, 1))
+        points = directions * rng.uniform(1300, 1900, size=(count, 1))
         stars = pv.PolyData(points)
-        self.r.plotter.add_points(stars, color="#cdd8ff", point_size=1.3, render_points_as_spheres=True, pickable=False)
+        self.r.plotter.add_points(stars, color="#e6ecff", point_size=1.6, render_points_as_spheres=True, pickable=False)
 
     def _collect_burn_intervals(self, spacecraft: Spacecraft) -> list[tuple[float, float]]:
         """Return [start, end] UT windows during which *spacecraft* burns."""

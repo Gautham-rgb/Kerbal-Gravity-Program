@@ -847,13 +847,17 @@ class REPL:
                 return current_body
 
             if selection == "..":
+                if parent is None:
+                    print(f"[Failed] '{current_body.name}' has no parent to go up to.")
+                    continue
                 current_body = parent
-            else:
-                child = next((c for c in children if c.identifier == selection), None)
+                continue
+
+            child = next((c for c in children if c.identifier == selection), None)
             if child is None:
                 print(f"[Failed] Could not resolve body '{selection}'.")
                 continue
-                current_body = child
+            current_body = child
 
 
     def _resolve_example_path(self, arg: str) -> str:

@@ -130,11 +130,16 @@ class SystemRenderer:
         if not np.isfinite(self.curr_ut):
             self.curr_ut = self.timeline_start_ut
 
-        self.updater.set_time(self.curr_ut)
+        # Keep the animation loop alive even if a frame's HUD/position update
+        # raises, so simulation time keeps advancing.
+        try:
+            self.updater.set_time(self.curr_ut)
 
-        self._update_hud()
-        self._update_hud_lower()
-        self._update_hud_node_details()
+            self._update_hud()
+            self._update_hud_lower()
+            self._update_hud_node_details()
+        except Exception:
+            pass
 
         self.plotter.render()
 
@@ -159,6 +164,17 @@ class SystemRenderer:
         """PyVista timer callback."""
         self.update()
 
+    def set_time_rate(self, rate: float) -> None:
+        """Set the wall-clock -> sim-time multiplier (warp speed)."""
+        rate = float(rate)
+        if rate < 0.0:
+            rate = 0.0
+        self.time_rate_per_s = rate
+        if rate != 0.0:
+            self._old_rate = rate
+        self._update_hud()
+        self.plotter.render()
+
     def run(self):
         if self.headless:
             self.updater.set_time(self.curr_ut)
@@ -171,6 +187,17 @@ class SystemRenderer:
         if self.root is not None:
             self.update()
             return
+
+        # Desktop: expose a live warp control and drive a single timer loop so
+        # simulation time (and thus body positions) actually advances.
+        self.plotter.add_slider_widget(
+            callback=lambda v: self.set_time_rate(float(v)),
+            rng=[0.0, 4000.0],
+            value=self.time_rate_per_s,
+            title="Time warp (x)",
+            pointa=(0.25, 0.93),
+            pointb=(0.75, 0.93),
+        )
 
         self.plotter.add_timer_event(
             callback=self.update_simulation,
