@@ -69,3 +69,16 @@ def kerbin_ticket(kerbin, system):
 def jool_ticket(jool, system):
     sc = _circular_vessel(jool, jool.radius * 0.2 + jool.atm_height, dry=1000.0, wet=20000.0)
     return Ticket("J", sc, system, name="J")
+
+
+@pytest.fixture
+def pol(system):
+    body = _find(system.root, "Pol")
+    assert body is not None, "Pol not found in bundled system"
+    return body
+
+
+@pytest.fixture
+def pol_ticket(pol, system):
+    sc = _circular_vessel(pol, 10_000.0, dry=1000.0, wet=20000.0)
+    return Ticket("P", sc, system, name="P")

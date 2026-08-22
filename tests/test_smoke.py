@@ -89,6 +89,26 @@ def test_go_interplanetary_unknown_target(jool_ticket):
         apply_go_interplanetary(jool_ticket, "moon:999", mode="gradual")
 
 
+def test_go_interplanetary_from_moon(pol_ticket):
+    # Regression test for the moon -> star (system root) frame fix: a craft
+    # orbiting Pol must resolve interplanetary targets like 'duna' via the star,
+    # not Jool's child list.
+    plan = apply_go_interplanetary(pol_ticket, "duna", mode="instant")
+    assert plan.total_dv > 0.0
+    assert plan.burn_count >= 2
+    parent = pol_ticket.spacecraft.orbit.parent
+    assert parent is not None
+    assert parent.name != "Jool"  # escaped into the Kerbol (star) frame
+    assert pol_ticket.spacecraft.orbit.eccen < 1.0
+
+
+def test_go_interplanetary_from_moon_to_moon(pol_ticket):
+    # A moon origin targeting another moon (e.g. Laythe) must also resolve.
+    plan = apply_go_interplanetary(pol_ticket, "moon:3", mode="instant")
+    assert plan.total_dv > 0.0
+    assert plan.burn_count >= 2
+
+
 # --- tickets / events -------------------------------------------------------
 
 def test_ticket_coast_and_advance(kerbin_ticket):

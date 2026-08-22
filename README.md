@@ -9,13 +9,16 @@ It is built for KSP players who want to work out transfers, delta-v budgets,
 and timelines before launching — and it is flexible enough that you can model
 arbitrary spacecraft and solar systems (KSP stock, OPM, or your own).
 
-> Status: pre-release (v0.1.0). The core works, but some math is still coarse
+> Status: stable (v1.0.0). The core is solid; the math is checked and the
+> planner flies end to end.
 
 ---
 
 ## Demo
 
 Watch KGRP plan and fly a mission right in the terminal:
+
+![KGRP demo](demo.gif)
 
 [![asciicast](https://asciinema.org/a/fBPRPZsKrolGCy2I.svg)](https://asciinema.org/a/fBPRPZsKrolGCy2I)
 
