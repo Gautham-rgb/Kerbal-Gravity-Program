@@ -9,7 +9,7 @@ actually want to draw something.
 from importlib import resources
 import os
 
-__version__ = "0.2.5"
+__version__ = "0.2.6"
 
 
 def example_system_path(name: str) -> str:

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import sys, pathlib
 # Add the project root to sys.path
 project_root = pathlib.Path(__file__).resolve().parents[1]
