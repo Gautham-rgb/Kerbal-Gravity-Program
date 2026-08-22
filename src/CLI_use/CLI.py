@@ -1174,10 +1174,14 @@ class REPL:
             print(f"Invalid argument: {target}")
 
     async def version(self, args):
-        if len(args) == 0:
+        if not args:
             print(f"v{__version__} of KGRP (Kerbal GRavity Program)")
             return
-        elif len(args) == 1 and args[0] == "-c" or "--credits":
+        flag = args[0]
+        if flag in ("-u", "--update", "update"):
+            await self._check_update()
+            return
+        if flag in ("-c", "--credits"):
             print(f"v{__version__} of KGRP (Kerbal GRavity Program)")
             print("Made by Gautham_rgb (systemic_speed on PyPi)")
             print("LICENSE: GNU GPLv3")
@@ -1186,6 +1190,25 @@ class REPL:
             print("Uncle Roger will delete you like a Jamie Oliver video. Chilli jam")
             print("does NOT belong in fried rice, and deleting KGRP is a sin like that")
             print("Don't be a stupid, weak-sauce chilli jam bastard.")
+            return
+        print(f"v{__version__} of KGRP (Kerbal GRavity Program)")
+
+    async def _check_update(self) -> None:
+        """Check PyPI for a newer release and tell the user how to upgrade."""
+        from CLI_use.updates import get_latest_version, is_update_available
+
+        print(f"You have v{__version__}.")
+        try:
+            latest = get_latest_version()
+        except Exception as exc:  # network/JSON errors must never break the CLI
+            print(f"Could not reach PyPI to check for updates ({exc}).")
+            return
+
+        if is_update_available(__version__, latest):
+            print(f"A newer version is available: v{latest}")
+            print("Upgrade with:  pip install --upgrade kgrp")
+        else:
+            print(f"You're up to date (latest on PyPI is v{latest}).")
 
     async def feedback_cmd(self, args):
         send = False
@@ -1602,6 +1625,24 @@ class REPL:
             + _QUICKSTART,
             border_style="cyan",
         ))
+        self._print_update_notice()
+
+    def _print_update_notice(self) -> None:
+        """Best-effort: tell the user if a newer version is on PyPI.
+
+        Network failures are swallowed silently so startup never blocks.
+        """
+        from CLI_use.updates import get_latest_version, is_update_available
+
+        try:
+            latest = get_latest_version()
+        except Exception:
+            return
+        if is_update_available(__version__, latest):
+            _CONSOLE.print(
+                f"[yellow]A new KGRP version is available: v{latest} "
+                f"(you have v{__version__}). Upgrade: pip install --upgrade kgrp[/yellow]"
+            )
 
     async def system_cmd(self, args):
         if self.system is None:
