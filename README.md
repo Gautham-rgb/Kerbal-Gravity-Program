@@ -18,8 +18,6 @@ arbitrary spacecraft and solar systems (KSP stock, OPM, or your own).
 
 Watch KGRP plan and fly a mission right in the terminal:
 
-![KGRP demo](demo.gif)
-
 [![asciicast](https://asciinema.org/a/fBPRPZsKrolGCy2I.svg)](https://asciinema.org/a/fBPRPZsKrolGCy2I)
 
 On sites that allow raw HTML, embed the player directly:
