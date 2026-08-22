@@ -94,6 +94,7 @@ class SystemRenderer:
 
         self._focus_index = 0
         self.focused_body: Body | Spacecraft | None = None
+        self._tk_scheduled = False
 
         self.scene = SceneBuilder(self)
         self.updater = SceneUpdater(self)
@@ -143,11 +144,16 @@ class SystemRenderer:
 
         self.plotter.render()
 
-        if self.root is not None:
+        if self.root is not None and not self._tk_scheduled:
+            self._tk_scheduled = True
             self.root.after(
                 int(dt * 1000),
-                lambda: self.update(dt),
+                lambda: self._tk_tick(dt),
             )
+
+    def _tk_tick(self, dt: float) -> None:
+        self._tk_scheduled = False
+        self.update(dt)
 
     def _advance_tickets(self):
         """Live playback advances ticket cursors; scrubbing never mutates them.
@@ -188,17 +194,9 @@ class SystemRenderer:
             self.update()
             return
 
-        # Desktop: expose a live warp control and drive a single timer loop so
-        # simulation time (and thus body positions) actually advances.
-        self.plotter.add_slider_widget(
-            callback=lambda v: self.set_time_rate(float(v)),
-            rng=[0.0, 4000.0],
-            value=self.time_rate_per_s,
-            title="Time warp (x)",
-            pointa=(0.25, 0.93),
-            pointb=(0.75, 0.93),
-        )
-
+        # Desktop: drive a single timer loop so simulation time (and thus body
+        # positions) actually advances. The warp slider is added in
+        # ControlManager.setup() during __init__.
         self.plotter.add_timer_event(
             callback=self.update_simulation,
             duration=33,
@@ -261,6 +259,16 @@ class SystemRenderer:
         except Exception:
             return None
 
+    @staticmethod
+    def _set_text(actor, text: str) -> None:
+        """Update a text actor's string regardless of its VTK subclass."""
+        if actor is None:
+            return
+        if hasattr(actor, "SetInput"):
+            actor.SetInput(text)
+        elif hasattr(actor, "SetText"):
+            actor.SetText(2, text)
+
     def _update_hud(self):
         focused = (
             self.focused_body.name
@@ -310,10 +318,8 @@ class SystemRenderer:
                 shadow=True,
                 name="mission-hud",
             )
-        elif hasattr(self.hud_actor, "SetText"):
-            self.hud_actor.SetText(2, text)
         else:
-            self.hud_actor.SetInput(text)
+            self._set_text(self.hud_actor, text)
 
     def _update_hud_lower(self):
         focused = self.focused_body
@@ -346,10 +352,8 @@ class SystemRenderer:
                 shadow=True,
                 name="hud-lower-left",
             )
-        elif hasattr(self.hud_lower_left, "SetText"):
-            self.hud_lower_left.SetText(2, text)
         else:
-            self.hud_lower_left.SetInput(text)
+            self._set_text(self.hud_lower_left, text)
 
     def _format_dv_component(self, vec: np.ndarray) -> str:
         mag = float(np.linalg.norm(vec))
@@ -368,17 +372,14 @@ class SystemRenderer:
         if self.hud_node_details is None:
             self.hud_node_details = self.plotter.add_text(
                 info,
-                position="upper_right",
+                position="lower_right",
                 font_size=13,
                 color="#ffd27a",
                 shadow=True,
                 name="hud-node-details",
             )
         else:
-            if hasattr(self.hud_node_details, "SetText"):
-                self.hud_node_details.SetText(2, info)
-            else:
-                self.hud_node_details.SetInput(info)
+            self._set_text(self.hud_node_details, info)
 
     def select_maneuver_node(self, ticket, event, node) -> None:
         """Register the clicked maneuver node and refresh the HUD."""

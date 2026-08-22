@@ -75,26 +75,22 @@ class ControlManager:
         )
 
         if self.r.show_timeline_slider:
-            timeline_max = self.r.scene._compute_timeline_max_ut()
-
-            if not np.isfinite(timeline_max) or timeline_max <= 0.0:
-                timeline_max = 3.15e7
-
             self.r.plotter.add_slider_widget(#type: ignore
-                callback=self._on_timeline_slider,
-                rng=[0.0, timeline_max],
-                value=self.r.curr_ut,
-                title="UT (s)",
-                interaction_event="always",
+                callback=self._on_warp_slider,
+                rng=[0.0, 4000.0],
+                value=self.r.time_rate_per_s,
+                title="Time warp (x)",
+                pointa=(0.25, 0.93),
+                pointb=(0.75, 0.93),
             )
 
-    def _on_timeline_slider(self, value):
+    def _on_warp_slider(self, value):
         value = float(value)
 
         if not np.isfinite(value):
             return
 
-        self.r.updater.set_time(value)
+        self.r.set_time_rate(value)
         self.r.plotter.render()
 
     def _refresh_overlay(self):

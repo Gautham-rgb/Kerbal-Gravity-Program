@@ -78,10 +78,9 @@ class TrameWebAdapter:
     async def _tick_loop(self):
         while True:
             await asyncio.sleep(0.033)
-            # headless renderer doesn't use the recursive root.after loop
-            self.renderer.updater.set_time(
-                self.renderer.curr_ut + 0.033 * self.renderer.time_rate_per_s
-            )
+            # Drive the real update path so tickets, HUD and positions advance
+            # exactly like the desktop build.
+            self.renderer.update(0.033)
             if self.view is not None:
                 self.view.update()
 
