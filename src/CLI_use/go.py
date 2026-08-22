@@ -303,12 +303,17 @@ def go_plan_interplanetary(
 
     spacecraft = ticket.spacecraft
     body = spacecraft.parent
-    grandparent = body.orbit.parent
-    if grandparent is None:
+    if body.orbit.parent is None:
         raise ValueError(
             f"{body.name} has no parent body to escape to — it's the top of the food chain. "
             f"There's no 'interplanetary' from here, just 'interstellar' (unsupported)."
         )
+    # Interplanetary transfers happen in the star (system root) frame, not the
+    # current body's immediate parent. Climb to the root so targets like 'duna'
+    # resolve whether you start from a planet or a moon (e.g. Pol -> Kerbol).
+    central = body
+    while central.orbit.parent is not None:
+        central = central.orbit.parent
 
     start_ut = ticket.cursor_ut if ut is None else float(ut)
 
@@ -340,18 +345,18 @@ def go_plan_interplanetary(
         raise ValueError("Cannot compute SOI exit time.")
 
     library = preset_library()
-    target_preset = find_preset(grandparent, spacecraft, library, target_key)
+    target_preset = find_preset(central, spacecraft, library, target_key)
     if target_preset is None:
         raise ValueError(
-            f"Unknown target '{target_key}' in {grandparent.name}'s frame. "
+            f"Unknown target '{target_key}' in {central.name}'s frame. "
             f"Use a body name (e.g. 'duna') or moon:<id> (e.g. moon:4). "
             f"The deep-space navigation charts don't list '{target_key}'."
         )
 
     abs_pos, abs_vel = _sim.state_at(soi_exit_ut)
-    if grandparent.orbit.parent is not None:
-        gp_pos = grandparent.get_absolute_pos_at_ut(soi_exit_ut)
-        gp_vel = grandparent.get_absolute_vel_at_ut(soi_exit_ut)
+    if central.orbit.parent is not None:
+        gp_pos = central.get_absolute_pos_at_ut(soi_exit_ut)
+        gp_vel = central.get_absolute_vel_at_ut(soi_exit_ut)
     else:
         gp_pos = np.zeros(3)
         gp_vel = np.zeros(3)
@@ -363,25 +368,25 @@ def go_plan_interplanetary(
         r0=rel_pos,
         v0=rel_vel,
         t0=soi_exit_ut,
-        parent=grandparent,
+        parent=central,
         dry_mass=spacecraft.dry_mass,
         wet_mass=spacecraft.mass,
         hull_mesh=None,
     )
 
     if overrides:
-        end_spec, _ = apply_overrides(target_preset.resolve(grandparent, temp_sc), grandparent, overrides)
+        end_spec, _ = apply_overrides(target_preset.resolve(central, temp_sc), central, overrides)
     else:
-        end_spec = target_preset.resolve(grandparent, temp_sc)
+        end_spec = target_preset.resolve(central, temp_sc)
 
     start_spec = _spec_from("Heliocentric", temp_sc.orbit)
-    helio_transfer = plan_transfer(temp_sc, grandparent, start_spec, end_spec, soi_exit_ut)
+    helio_transfer = plan_transfer(temp_sc, central, start_spec, end_spec, soi_exit_ut)
 
     events: list[TicketEvent] = []
     for step in escape_plan.events:
         events.append(step)
     events.append(CoastEvent(start_ut, soi_exit_ut))
-    events.append(ReferenceBodyEvent(soi_exit_ut, grandparent))
+    events.append(ReferenceBodyEvent(soi_exit_ut, central))
     for step in helio_transfer.steps:
         if step.kind == "coast":
             events.append(CoastEvent(step.start, step.end))
@@ -389,9 +394,9 @@ def go_plan_interplanetary(
             events.append(ManeuverEvent(step.node))
 
     helio_plan = GoPlan(
-        body_name=grandparent.name,
-        start_label=start_spec.describe(grandparent),
-        end_label=end_spec.describe(grandparent),
+        body_name=central.name,
+        start_label=start_spec.describe(central),
+        end_label=end_spec.describe(central),
         start_spec=start_spec,
         end_spec=end_spec,
         transfer=helio_transfer,
@@ -401,7 +406,7 @@ def go_plan_interplanetary(
         escape_plan=escape_plan,
         helio_plan=helio_plan,
         soi_exit_ut=soi_exit_ut,
-        grandparent_name=grandparent.name,
+        grandparent_name=central.name,
         events=events,
     )
 
