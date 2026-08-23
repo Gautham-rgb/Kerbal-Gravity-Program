@@ -16,7 +16,7 @@ arbitrary spacecraft and solar systems (KSP stock, OPM, or your own).
 
 ## Demo
 
-Watch KGRP plan and fly a mission right in the terminal:
+here is an example of a KGRP workflow loop right in the terminal:
 
 [![asciicast](https://asciinema.org/a/fBPRPZsKrolGCy2I.svg)](https://asciinema.org/a/fBPRPZsKrolGCy2I)
 
@@ -81,7 +81,7 @@ render                         # optional 3D view
 ```
 
 `help` lists every command; `help <command>` (e.g. `help go`) explains one.
-That is it: **load a system -> new ticket -> plan with `go` -> `advance` the
+the loop is just: **load a system -> new ticket -> plan with `go` -> `advance` the
 timeline -> `render`**.
 
 ---
@@ -132,7 +132,7 @@ krgp > render
 
 Override the arrival orbit with the same `key=value` overrides, e.g.
 `go_i duna peri_alt=200000 apo_alt=200000`. `go -i` / `go_i` work from any body
-that orbits a star (stock or OPM).
+that orbits a star that is within the system.
 
 ### 3. Save the mission and come back
 
@@ -227,9 +227,7 @@ python -m pytest
 
 Made by Gautham, and way too much coffee
 
-As it turns out (unsurprisingly) that this needs way too much math, so I did use some AI to help me understand the math (for example: Runge - Kutta - Fehler (4)5 optimizers) but other than that, I did use AI to fix bugs like reference body bugs, rendering stuff and random math bugs that I didn't see coming, but i did use AI kind of sparingly ("Kind of").
-
-KGRP plans the mission. Flying it is still gloriously your problem.
+As it turns out (unsurprisingly) that this needs way too much math, so I did use some AI to help me understand the math (for example: Runge - Kutta - Fehler (4)5 optimizers) but other than that, I did use AI to fix bugs like reference body bugs, rendering stuff and random math bugs that I didn't see coming, but i did use AI kind of sparingly (**"Kind of"**).
 
 ## License
 
