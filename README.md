@@ -225,15 +225,9 @@ python -m pytest
 
 ## Credits
 
-Built by Gautham, powered by an unreasonable amount of Kerbal optimism.
+Made by Gautham, and way too much coffee
 
-- **Jebediah Kerman** — chief test pilot. Assumes every plan works until
-  physically proven otherwise (and sometimes after).
-- **Bill & Bob** — held the ladder. Reviewed nothing.
-- **The math** — probably fine. Mostly. We checked it, like, twice.
-- **The deep-space navigation charts** — still don't list your spelling
-  mistakes, but they do list Duna now.
-- **You** — for reading this far instead of just launching and hoping.
+As it turns out (unsurprisingly) that this needs way too much math, so I did use some AI to help me understand the math (for example: Runge - Kutta - Fehler (4)5 optimizers) but other than that, I did use AI to fix bugs like reference body bugs, rendering stuff and random math bugs that I didn't see coming, but i did use AI kind of sparingly ("Kind of").
 
 KGRP plans the mission. Flying it is still gloriously your problem.
 
