@@ -280,7 +280,7 @@ class InterplanetaryPlan:
                 if step.kind == "coast":
                     lines.append(f"    coast  {step.start:,.1f}s -> {step.end:,.1f}s  {step.note}")
                 else:
-                    lines.append(f"    burn   @ {step.ut:,.1f}s  dv={np.linalg.norm(step.dv):,.1f} m/s  {step.note}")
+                    lines.append(f"    burn   @ {step.ut:,.1f}s  dv={np.linalg.norm(step.dv):,.1f} m/s  {step.note}") #type: ignore
         for w in self.warnings:
             lines.append(f"  [Warning] {w}")
         return lines
@@ -326,21 +326,21 @@ def go_plan_interplanetary(
 
     from basic_systems.orbit_pred import Spacecraft as _SC_sim
     _burn_node = escape_plan.transfer.steps[-1].node
-    _burn_pos_abs, _burn_vel_abs = spacecraft.state_at(_burn_node.ut)
-    _body_pos = body.get_absolute_pos_at_ut(_burn_node.ut)
-    _body_vel = body.get_absolute_vel_at_ut(_burn_node.ut)
+    _burn_pos_abs, _burn_vel_abs = spacecraft.state_at(_burn_node.ut)#type: ignore
+    _body_pos = body.get_absolute_pos_at_ut(_burn_node.ut)#type: ignore
+    _body_vel = body.get_absolute_vel_at_ut(_burn_node.ut)#type: ignore
     _sim = _SC_sim(
         name="_soi_sim",
         r0=_burn_pos_abs - _body_pos,
-        v0=_burn_vel_abs - _body_vel + _burn_node.delta_v_vector,
-        t0=_burn_node.ut,
+        v0=_burn_vel_abs - _body_vel + _burn_node.delta_v_vector,#type: ignore
+        t0=_burn_node.ut,#type: ignore
         parent=body,
         dry_mass=spacecraft.dry_mass,
         wet_mass=spacecraft.mass,
         hull_mesh=None,
     )
 
-    soi_exit_ut = _sim.time_to_soi_exit(_burn_node.ut)
+    soi_exit_ut = _sim.time_to_soi_exit(_burn_node.ut)#type: ignore
     if soi_exit_ut is None or soi_exit_ut <= start_ut:
         raise ValueError("Cannot compute SOI exit time.")
 
@@ -391,7 +391,7 @@ def go_plan_interplanetary(
         if step.kind == "coast":
             events.append(CoastEvent(step.start, step.end))
         else:
-            events.append(ManeuverEvent(step.node))
+            events.append(ManeuverEvent(step.node))#type: ignore
 
     helio_plan = GoPlan(
         body_name=central.name,
