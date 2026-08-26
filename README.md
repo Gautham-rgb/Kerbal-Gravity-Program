@@ -183,13 +183,7 @@ Valid time units: `y` (year), `mo` (month), `d` (day), `h` (hour), `m`
 
 1. for basic orbital mechanics, an RKF45 and some other basic stuff, type `import kgrp.basic_systems` at the top of your script
 2. for a little complex stuff like a ticket or subclassing the REPL or adding a new command, type `import kgrp.CLI_use` at the top of your script
-3. if you find any bugs or cool features you want to add, please use the `feedback -y` command, allowing me to see your message, the OS and the version of KGrP you are on
-
-## Running the tests
-
-```bash
-python -m pytest
-```
+3. if you find any bugs or cool features you want to add, please use the `feedback -y` command, allowing me to see your message, the OS and the version of KGrP you are on.
 
 ---
 
