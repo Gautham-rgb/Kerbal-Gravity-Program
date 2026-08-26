@@ -1,51 +1,25 @@
-# Kerbal Gravity Program (KGRP)
+# Kerbal Gravity Program
 
-KGRP is a **mission planner for Kerbal Space Program** that runs *outside* the
-game. You define a spacecraft, stack events (coast, maneuver, burn, engine
-toggle, science, and more) on a timeline, and KGRP simulates them with real
-orbital mechanics. Plan in KGRP, then fly the plan in KSP.
+Kerbal Gravity Program (KGRP or KGrP) is a mission planning software for any and all space games or heck, even the real solar system.
 
-It is built for KSP players who want to work out transfers, delta-v budgets,
-and timelines before launching — and it is flexible enough that you can model
-arbitrary spacecraft and solar systems (KSP stock, OPM, or your own).
+## The Reason I made This
 
-> Status: stable (v1.0.0). The core is solid; the math is checked and the
-> planner flies end to end.
+See, people in KSP make kind of dumb decisions (sorry Matt Lowne), like getting entire crafts to somewhere like Jool or Sarnus, just as refueling stations.
+plus NASA (yup, the space agency) takes way too much time to make cool missions like the Voyagers or Cassini-Huygens (well, for one they have to perfectly make the spacecraft and find a window, but I am ignoring that). So I researched about how do people plan stuff like Grand Tours or something.
 
----
+So, i came up to my computer and searched for "KSP planning software" and found random stuff like injection burn predictors, window finders, and other stuff, so I set out to make a tool to allow for anyone to plan cool stuff, and that is how KGrP was made.
 
-## Demo
-
-here is an example of a KGRP workflow loop right in the terminal:
-
+here is an example of me importing the Real world system (`planets.json`) and making a trip (called a ticket).
 [![asciicast](https://asciinema.org/a/fBPRPZsKrolGCy2I.svg)](https://asciinema.org/a/fBPRPZsKrolGCy2I)
 
-On sites that allow raw HTML, embed the player directly:
-
-```html
-<script id="asciinema-player-fBPRPZsKrolGCy2I" src="https://asciinema.org/a/fBPRPZsKrolGCy2I.js" async></script>
-```
-
 ---
 
-## Features
-
-- **Round-trip mission planner** — define a vessel, schedule a timeline of
-  events, and step the sim forward with `advance`.
-- **`go` transfer planner** — pick a start and end orbit and KGRP computes the
-  burns, coast phases, and total delta-v for you.
-- **Editable orbit presets** — low orbit, synchronous, escape, custom orbits.
-- **Full event timeline** — coast, propagate, rkf45, maneuver, burn, engine
-  control, attitude, rcs, stage, resource transfer, dock, undock, reference-body
-  change, surface (land/launch), science, checkpoint.
-- **3D renderer** — a PyVista/Qt window to watch the mission unfold.
-- **Save/load** — systems, tickets, and whole missions as JSON.
 
 ---
 
 ## Installation
 
-Requires Python 3.10+.
+Requires Python 3.10+, and pip (python package manager) or uv (another package manager, but I recommend you to use pip instead of uv tools, reason will be said later).
 
 ```bash
 # From the terminal (using pip):
@@ -69,15 +43,15 @@ You should see the KGRP prompt (`krgp >`). Type `help` and press Enter.
 
 ## Quickstart
 
-KGRP is a REPL. The whole loop is five commands, typed at the `krgp >`
+KGrP is a REPL. The whole loop is five commands, typed at the `krgp >`
 prompt (launch with `kgrp`):
 
 ```text
-load system planets_ksp.json   # or: new system  (build your own)
-new ticket                     # wizard creates a vessel + first ticket
-go                             # pick two orbits; KGRP plans the burns
-advance <end-ut>               # run the timeline (UT is printed by go)
-render                         # optional 3D view
+load system planets_ksp.json   
+new ticket                     
+go                             
+advance <end-ut>               
+render    # this can only work when you install the kgrp[render] package, which adds PyVista                     
 ```
 
 `help` lists every command; `help <command>` (e.g. `help go`) explains one.
@@ -175,15 +149,15 @@ Type `help` for the full list, and `help <command>` (e.g. `help go`,
 | `render` | Open the 3D renderer window. |
 | `help` / `clear` / `exit` | Help, clear screen, quit. |
 
-### Time input is human-friendly
+### Time input
 
 You rarely need raw seconds:
 
 ```text
-advance 2d 5h          # a duration, added to the current UT
-advance 21600          # or a raw UT in seconds
-time "Year 2, Day 100" # a calendar timestamp
-go current preset:molniya incl=30   # per-use orbit overrides
+advance 2d 5h
+advance 21600         
+time "Year 2, Day 100" 
+go current preset:molniya incl=30   
 ```
 
 Valid time units: `y` (year), `mo` (month), `d` (day), `h` (hour), `m`
@@ -191,29 +165,25 @@ Valid time units: `y` (year), `mo` (month), `d` (day), `h` (hour), `m`
 
 ---
 
-## Tips for new players
+## Tips 
 
-- **Start from a preset, not a blank page.** `new ticket` hands you a vessel
-  with an engine and fuel already attached — you do not start with a
-  paperweight.
-- **Let `go` do the math.** Instead of hand-computing burns, run `go` and read
-  the delta-v budget it prints.
+- **Use presets.** `new ticket` hands you a vessel
+  with an engine and fuel already attached.
+- **Let `go` do the math.** `go` is one of, if not the most useful command when you are planning something.
 - **Use `advance` to walk time**, one coast/burn at a time. `time` jumps the
   cursor without simulating (handy for inspection).
 - **Save your work.** `save mission` writes a single file with the system,
   ticket, and vessels; `load mission` brings it all back.
 - **Stuck?** `help` and `help <command>` are always available, and `system
   validate` will tell you if your system has problems.
-
+- **Use it via code** KGrP can be used via python code (just `import kgrp`)
 ---
 
-## Project layout
+## Some things to keep in mind about KGrP (both code and REPL)
 
-- `CLI_use/` — the REPL, command parsing, completion, and the `go` planner.
-- `basic_systems/` — physics: bodies, orbits, integrators, and the renderer.
-- `planets_ksp.json` / `planets_ksp_opm.json` — stock and OPM system data.
-- `planets.json` - Actual Solar System data
-- `tests/` — pytest suite (`python -m pytest`).
+1. for basic orbital mechanics, an RKF45 and some other basic stuff, type `import kgrp.basic_systems` at the top of your script
+2. for a little complex stuff like a ticket or subclassing the REPL or adding a new command, type `import kgrp.CLI_use` at the top of your script
+3. if yo find any bugs or cool features you want to add, please use the `feedback -y` command, allowing me to see your message, the OS and the version of KGrP you are on
 
 ## Running the tests
 
@@ -231,5 +201,4 @@ As it turns out (unsurprisingly) that this needs way too much math, so I did use
 
 ## License
 
-GNU GPLv3 — see the `LICENSE` file. Go forth and transfer.
-
+GNU GPLv3 — see the `LICENSE` file. Go forth and transfer. 
